@@ -1,0 +1,8 @@
+{
+  "name": "VELORIA",
+  "description": "منصة سوق إلكتروني (Marketplace) تربط البائع بالمشتري مباشرة دون عمولات، مع نظام سمعة وتوثيق مدمج ودعم كامل للأدوار المختلفة والوضع الداكن.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
