@@ -69,7 +69,7 @@ export default function ProductDetailsModal({
       alert('لم يقم البائع بإضافة رقم واتساب.');
       return;
     }
-    const msg = encodeURIComponent(`مرحباً ${seller?.name || ''}، أود الاستفسار عن منتجك "${product.title}" المعروض في منصة فيلوريا بسعر ${product.price} ل.س.\nرابط المنتج: ${window.location.origin}/store/${seller?.username || seller?.id || ''}`);
+    const msg = encodeURIComponent(`مرحباً ${seller?.name || ''}، أود الاستفسار عن منتجك "${product.title}" المعروض في منصة فيلوريا بسعر ${product.price} ${product.currency || 'ل.س'}.\nرابط المنتج: ${window.location.origin}/store/${seller?.username || seller?.id || ''}`);
     window.open(`https://wa.me/${num}?text=${msg}`, '_blank');
   };
 
@@ -107,7 +107,7 @@ export default function ProductDetailsModal({
   // Filter reviews for this product
   const [productReviews, setProductReviews] = React.useState<Review[]>([]);
   const [reviewsCount, setReviewsCount] = React.useState(product.reviewsCount || 0);
-  const [ratingAverage, setRatingAverage] = React.useState(product.rating || 5.0);
+  const [ratingAverage, setRatingAverage] = React.useState(product.rating !== undefined && product.rating !== null ? product.rating : 0);
 
   console.log("Current productReviews state:", productReviews);
 
@@ -136,7 +136,10 @@ export default function ProductDetailsModal({
           setRatingAverage(avg);
         }
       } catch (err) {
-        console.error('Error loading reviews or product stats:', err);
+        console.warn('Error loading reviews or product stats:', err);
+        setProductReviews([]);
+        setReviewsCount(0);
+        setRatingAverage(5.0);
       }
     } else {
       setProductReviews([]);
@@ -349,7 +352,7 @@ export default function ProductDetailsModal({
           {/* Location Badge */}
           <div className="absolute top-4 right-4 bg-slate-900/75 backdrop-blur-xs text-white px-3 py-1 rounded-full text-xs flex items-center gap-1">
             <MapPin className="w-3.5 h-3.5 text-amber-500" />
-            <span>{product.location}</span>
+            <span>{product.city || 'دمشق'}</span>
           </div>
         </div>
 
@@ -419,7 +422,7 @@ export default function ProductDetailsModal({
                   </h1>
                   <div className="flex items-center justify-between">
                     <div className="text-amber-600 dark:text-amber-400 text-xl font-black">
-                      {product.price} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">{product.currency}</span>
+                      {product.price} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">ل.س</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg">
@@ -437,12 +440,25 @@ export default function ProductDetailsModal({
                   </div>
                 </div>
 
-                {/* Description */}
+                 {/* Description */}
                 <div>
                   <h4 className="text-xs font-bold text-slate-400 mb-1">وصف المنتج:</h4>
                   <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-line">
                     {product.description}
                   </p>
+                </div>
+
+                {/* Location Detail */}
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-850/50 border border-slate-100 dark:border-slate-800 text-xs">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-amber-500 shrink-0" />
+                    <div className="text-right">
+                      <h4 className="text-[10px] font-bold text-slate-400 mb-0.5">موقع المنتج:</h4>
+                      <p className="font-bold text-slate-800 dark:text-slate-200">
+                        {product.city || 'دمشق'}
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Seller Profile Block */}
@@ -641,7 +657,7 @@ export default function ProductDetailsModal({
                       <img src={product.images[0]} className="w-10 h-10 object-cover rounded-lg" />
                       <div>
                         <p className="text-xs font-bold text-slate-700 dark:text-slate-300">{product.title}</p>
-                        <p className="text-[10px] text-amber-600">{product.price} ل.س</p>
+                        <p className="text-[10px] text-amber-600">{product.price} {product.currency || 'ل.س'}</p>
                       </div>
                     </div>
                   </div>
@@ -713,7 +729,7 @@ export default function ProductDetailsModal({
                       <p className="text-[10px] text-slate-400">سعر المنتج × الكمية المطلوبة</p>
                     </div>
                     <div className="text-amber-600 dark:text-amber-400 font-black text-lg">
-                      {product.price * orderQty} ل.س
+                      {product.price * orderQty} {product.currency || 'ل.س'}
                     </div>
                   </div>
 

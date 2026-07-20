@@ -311,16 +311,25 @@ create policy "Only admins can modify categories"
   );
 
 -- 3. Products Policies
+drop policy if exists "Allow public read access to active and sold products" on public.products;
 create policy "Allow public read access to active and sold products" 
-  on public.products for select using (status in ('active', 'sold') or auth.uid() = user_id);
+  on public.products for select using (
+    (status in ('active', 'sold')) or 
+    auth.uid() = user_id or 
+    exists (select 1 from public.profiles where id = auth.uid() and role in ('moderator', 'admin'))
+  );
 
 create policy "Allow users to insert own products" 
   on public.products for insert with check (auth.uid() = user_id);
 
+drop policy if exists "Allow owners, moderators and admins to update products" on public.products;
 create policy "Allow owners, moderators and admins to update products" 
   on public.products for update using (
     auth.uid() = user_id or 
     exists (select 1 from public.profiles where id = auth.uid() and role in ('moderator', 'admin'))
+  )
+  with check (
+    true
   );
 
 create policy "Allow owners and admins to delete products" 

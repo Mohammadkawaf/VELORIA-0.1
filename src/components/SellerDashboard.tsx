@@ -32,14 +32,7 @@ export default function SellerDashboard({
   const [activeTab, setActiveTab] = useState<'add-product' | 'my-products' | 'orders' | 'custom-shop'>('my-products');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
-  // New product form states
-  const [title, setTitle] = useState('');
-  const [categoryId, setCategoryId] = useState(categories && categories.length > 0 ? categories[0].id : '');
-  const [price, setPrice] = useState<number>(50);
-  const [description, setDescription] = useState('');
-  const [imageLink, setImageLink] = useState('');
-  const [location, setLocation] = useState('الرياض، المملكة العربية السعودية');
-  const [formSuccess, setFormSuccess] = useState(false);
+  // Legacy state removed
 
   // Custom shop customization states
   const [primaryColor, setPrimaryColor] = useState(currentUser.premiumConfig?.primaryColor || '#b45309');
@@ -55,42 +48,7 @@ export default function SellerDashboard({
   // Filter orders on products owned by this seller
   const myOrders = orders.filter((o) => o.sellerId === currentUser.id);
 
-  const handleCreateProduct = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (title.trim() === '' || price <= 0 || description.trim() === '') return;
-
-    // Use placeholder Unsplash image based on category if empty
-    const imgUrl = imageLink.trim() !== '' ? imageLink.trim() : 
-      categoryId === 'cat-1' ? 'https://images.unsplash.com/photo-1546868871-7041f2a55e12?auto=format&fit=crop&w=600&h=400&q=80' : // phone
-      categoryId === 'cat-2' ? 'https://images.unsplash.com/photo-1523381210434-271e8be1f52b?auto=format&fit=crop&w=600&h=400&q=80' : // shirt
-      categoryId === 'cat-4' ? 'https://images.unsplash.com/photo-1551024601-bec78aea704b?auto=format&fit=crop&w=600&h=400&q=80' : // donut
-      'https://images.unsplash.com/photo-1513542789411-b6a5d4f31634?auto=format&fit=crop&w=600&h=400&q=80'; // general
-
-    try {
-      await onAddProduct({
-        title,
-        categoryId,
-        price: Number(price),
-        currency: 'ل.س',
-        description,
-        images: [imgUrl],
-        location,
-        status: 'active'
-      });
-
-      setTitle('');
-      setDescription('');
-      setImageLink('');
-      setFormSuccess(true);
-      setTimeout(() => {
-        setFormSuccess(false);
-        setActiveTab('my-products');
-      }, 2000);
-    } catch (err) {
-      console.error('Error creating product in seller dashboard:', err);
-      alert('حدث خطأ أثناء إضافة المنتج، يرجى المحاولة مرة أخرى.');
-    }
-  };
+  // Legacy handleCreateProduct removed
 
   const handleSaveShopConfig = (e: React.FormEvent) => {
     e.preventDefault();
@@ -271,7 +229,11 @@ export default function SellerDashboard({
                           تم البيع
                         </button>
                         <button
-                          onClick={() => onUpdateProductStatus(p.id, 'hidden')}
+                          onClick={() => {
+                            console.log("Hide button clicked");
+                            console.log("calling handleUpdateProductStatus");
+                            onUpdateProductStatus(p.id, 'hidden');
+                          }}
                           className={`px-2 py-0.5 rounded text-[9px] font-bold cursor-pointer ${
                             p.status === 'hidden'
                               ? 'bg-slate-500 text-white'

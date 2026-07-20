@@ -140,7 +140,7 @@ export default function ProductCard({
             <div className="text-amber-600 dark:text-amber-400 font-extrabold text-base flex items-baseline gap-1">
               <span>{product.price}</span>
               <span className="text-xs font-normal text-slate-500 dark:text-slate-400">
-                {product.currency}
+                {product.currency || 'ل.س'}
               </span>
             </div>
 
@@ -160,7 +160,7 @@ export default function ProductCard({
           <div className="flex items-center justify-between text-[11px] text-slate-400 dark:text-slate-500">
             <span className="flex items-center gap-0.5 truncate max-w-[100px]">
               <MapPin className="w-3 h-3 shrink-0" />
-              {product.location.split('،')[0] || product.location}
+              {product.city || 'دمشق'}
             </span>
             <div className="flex items-center gap-2 shrink-0">
               <span className="flex items-center gap-0.5 text-slate-400 dark:text-slate-500">

@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { Product, User, Category, Review, Order, Message, Report, UserBadge, Notification, Contribution, VerificationRequest, AppSettings } from './types';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { Product, User, Category, Review, Order, Message, Report, UserBadge, Notification, Contribution, VerificationRequest, AppSettings, ProductFilterOptions } from './types';
 import Navbar from './components/Navbar';
+import HideProductModal from './components/HideProductModal';
+import AdminPromptModal from './components/AdminPromptModal';
 import RoleSwitcher from './components/RoleSwitcher';
 import ProductCard from './components/ProductCard';
 import ProductDetailsModal from './components/ProductDetailsModal';
@@ -10,6 +12,7 @@ import AdminPanel from './components/AdminPanel';
 import ChatModal from './components/ChatModal';
 import ContributionModal from './components/ContributionModal';
 import { supabase, supabaseService, defaultAppSettings, isSupabaseConfigured } from './lib/supabase';
+import ProductFilterPanel from './components/ProductFilterPanel';
 
 // New subviews for Part 2 UI/UX completeness
 import NavigationMenu from './components/NavigationMenu';
@@ -28,12 +31,47 @@ import NotificationsView from './components/NotificationsView';
 import SettingsView from './components/SettingsView';
 import ResetPasswordView from './components/ResetPasswordView';
 
-import { Sparkles, ShoppingBag, Heart, MessageSquare, Shield, HelpCircle, SlidersHorizontal, ArrowLeft, Star, Store, PlusCircle, ShieldAlert, ChevronRight } from 'lucide-react';
+import { Sparkles, ShoppingBag, Heart, MessageSquare, Shield, HelpCircle, SlidersHorizontal, ArrowLeft, Star, Store, PlusCircle, ShieldAlert, ChevronRight, Flame, Loader2, RotateCcw, MapPin, Coins, Check } from 'lucide-react';
+
+// Syrian Governorates & Cities mapping
+const GOVERNORATES_CITIES: Record<string, string[]> = {
+  "دمشق": ["دمشق المدينة", "مشروع دمر", "المزة", "المالكي", "أبو رمانة", "البرامكة", "القصاع", "الميدان", "التجارة", "ركن الدين", "كفرسوسة", "المهاجرين", "شاغور"],
+  "ريف دمشق": ["جرمانا", "قدسيا", "ضاحية قدسيا", "التل", "الكسوة", "صحنايا", "أشرفية صحنايا", "ضاحية الأسد", "يبرود", "النبك", "قطنا", "الزبداني", "صيدنايا"],
+  "حلب": ["حلب المدينة", "منبج", "الباب", "عفرين", "نبل", "أعزاز", "الزهراء", "السفيرة", "الجميلية", "الشهباء", "الفرقان", "حلب الجديدة", "الموكامبو"],
+  "حمص": ["حمص المدينة", "الرستن", "تدمر", "القصير", "تلكلخ", "المشرفة", "الإنشاءات", "الوعر", "الحمراء", "الغوطة", "المحطة"],
+  "حماة": ["حماة المدينة", "سلمية", "مصياف", "السقيلبية", "محردة", "الغاب", "العاصي", "طريق حلب"],
+  "اللاذقية": ["اللاذقية المدينة", "جبلة", "القرداحة", "الحفة", "صلنفة", "الرمل الشمالي", "المشروع الأول", "الأوقاف", "الزراعة"],
+  "طرطوس": ["طرطوس المدينة", "بانياس", "صافيتا", "الدريكيش", "الشيخ بدر", "القدموس", "مشتى الحلو"],
+  "السويداء": ["السويداء المدينة", "شهبا", "صلخد", "القريا"],
+  "درعا": ["درعا المدينة", "طفس", "نوى", "بصرى الشام", "الصنمين", "ازرع", "داعل"],
+  "دير الزور": ["دير الزور المدينة", "الميادين", "البوكمال"],
+  "الحسكة": ["الحسكة المدينة", "القامشلي", "رأس العين", "عامودا", "المالكية", "الدرباسية"]
+};
 
 export default function App() {
   // Theme state
   const [isDarkMode, setIsDarkMode] = useState(() => {
     return localStorage.getItem('veloria-dark') === 'true';
+  });
+
+  // Hide product modal state
+  const [hideProductModal, setHideProductModal] = useState<{
+    isOpen: boolean;
+    productId: string;
+    status: 'active' | 'hidden' | 'sold' | 'expired';
+  }>({
+    isOpen: false,
+    productId: '',
+    status: 'hidden'
+  });
+
+  // Delete product modal state
+  const [deleteProductModal, setDeleteProductModal] = useState<{
+    isOpen: boolean;
+    productId: string;
+  }>({
+    isOpen: false,
+    productId: ''
   });
 
   useEffect(() => {
@@ -45,28 +83,208 @@ export default function App() {
     localStorage.setItem('veloria-dark', String(isDarkMode));
   }, [isDarkMode]);
 
+  // Comparison helper functions for stable references
+  const areUsersEqual = useCallback((u1: User | null, u2: User | null): boolean => {
+    if (u1 === u2) return true;
+    if (!u1 || !u2) return false;
+    return (
+      u1.id === u2.id &&
+      u1.name === u2.name &&
+      u1.email === u2.email &&
+      u1.role === u2.role &&
+      u1.avatar === u2.avatar &&
+      u1.bio === u2.bio &&
+      u1.isPremium === u2.isPremium &&
+      u1.followersCount === u2.followersCount &&
+      u1.ratingAverage === u2.ratingAverage &&
+      u1.ratingsCount === u2.ratingsCount &&
+      u1.username === u2.username &&
+      u1.city === u2.city &&
+      u1.phone === u2.phone &&
+      u1.whatsapp === u2.whatsapp &&
+      u1.whatsapp_number === u2.whatsapp_number &&
+      u1.coverImage === u2.coverImage &&
+      u1.salesCount === u2.salesCount &&
+      u1.trustLevel === u2.trustLevel &&
+      u1.status === u2.status &&
+      JSON.stringify(u1.badges) === JSON.stringify(u2.badges)
+    );
+  }, []);
+
+  const areUserArraysEqual = useCallback((arr1: User[], arr2: User[]): boolean => {
+    if (arr1.length !== arr2.length) return false;
+    return arr1.every((u, i) => areUsersEqual(u, arr2[i]));
+  }, [areUsersEqual]);
+
+  const areProductsEqual = useCallback((p1: Product, p2: Product): boolean => {
+    return (
+      p1.id === p2.id &&
+      p1.title === p2.title &&
+      p1.description === p2.description &&
+      p1.price === p2.price &&
+      p1.currency === p2.currency &&
+      p1.categoryId === p2.categoryId &&
+      p1.sellerId === p2.sellerId &&
+      p1.status === p2.status &&
+      p1.city === p2.city &&
+      p1.createdAt === p2.createdAt &&
+      p1.rating === p2.rating &&
+      p1.reviewsCount === p2.reviewsCount &&
+      p1.viewsCount === p2.viewsCount &&
+      JSON.stringify(p1.images) === JSON.stringify(p2.images)
+    );
+  }, []);
+
+  const areProductArraysEqual = useCallback((arr1: Product[], arr2: Product[]): boolean => {
+    if (arr1.length !== arr2.length) return false;
+    return arr1.every((p, i) => areProductsEqual(p, arr2[i]));
+  }, [areProductsEqual]);
+
+  const areReviewsEqual = useCallback((r1: Review, r2: Review): boolean => {
+    return (
+      r1.id === r2.id &&
+      r1.productId === r2.productId &&
+      r1.reviewerId === r2.reviewerId &&
+      r1.rating === r2.rating &&
+      r1.comment === r2.comment &&
+      r1.createdAt === r2.createdAt
+    );
+  }, []);
+
+  const areReviewArraysEqual = useCallback((arr1: Review[], arr2: Review[]): boolean => {
+    if (arr1.length !== arr2.length) return false;
+    return arr1.every((r, i) => areReviewsEqual(r, arr2[i]));
+  }, [areReviewsEqual]);
+
+  // Reviews state (to calculate real rating averages and counts)
+  const [allReviews, setAllReviewsRaw] = useState<Review[]>([]);
+  const setAllReviews = useCallback((value: React.SetStateAction<Review[]>) => {
+    setAllReviewsRaw(prev => {
+      const next = typeof value === 'function' ? (value as Function)(prev) : value;
+      if (areReviewArraysEqual(prev, next)) {
+        return prev;
+      }
+      return next;
+    });
+  }, [areReviewArraysEqual]);
+
   // Lists persistence states
-  const [users, setUsers] = useState<User[]>(() => {
+  const [rawUsers, setRawUsers] = useState<User[]>(() => {
     const saved = localStorage.getItem('veloria-users');
     return saved ? JSON.parse(saved) : [];
   });
 
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+  const setUsers = useCallback((value: React.SetStateAction<User[]>) => {
+    setRawUsers(prev => {
+      const next = typeof value === 'function' ? (value as Function)(prev) : value;
+      if (areUserArraysEqual(prev, next)) {
+        return prev;
+      }
+      return next;
+    });
+  }, [areUserArraysEqual]);
+
+  const [rawCurrentUser, setRawCurrentUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('veloria-current-user-id');
     if (saved === 'null' || !saved) return null;
-    const found = users.find((u) => u.id === saved);
+    const found = rawUsers.find((u) => u.id === saved);
     return found || null;
   });
 
-  const [products, setProducts] = useState<Product[]>(() => {
+  const setCurrentUser = useCallback((value: React.SetStateAction<User | null>) => {
+    setRawCurrentUser(prev => {
+      const next = typeof value === 'function' ? (value as Function)(prev) : value;
+      if (areUsersEqual(prev, next)) {
+        return prev;
+      }
+      return next;
+    });
+  }, [areUsersEqual]);
+
+  const [products, setProductsRaw] = useState<Product[]>(() => {
     const saved = localStorage.getItem('veloria-products');
     return saved ? JSON.parse(saved) : [];
   });
 
-  const [categories, setCategories] = useState<Category[]>(() => {
+  const setProducts = useCallback((value: React.SetStateAction<Product[]>) => {
+    setProductsRaw(prev => {
+      const next = typeof value === 'function' ? (value as Function)(prev) : value;
+      if (areProductArraysEqual(prev, next)) {
+        return prev;
+      }
+      return next;
+    });
+  }, [areProductArraysEqual]);
+
+  const usersRef = useRef<User[]>([]);
+  const users = useMemo(() => {
+    const nextUsers = rawUsers.map(user => {
+      // Find all products owned by this seller
+      const sellerProducts = products.filter(p => p.sellerId === user.id);
+      const sellerProductIds = sellerProducts.map(p => p.id);
+      
+      // Find all reviews for these products
+      const sellerReviews = allReviews.filter(r => sellerProductIds.includes(r.productId));
+      
+      if (sellerReviews.length === 0) {
+        return {
+          ...user,
+          ratingAverage: 0,
+          ratingsCount: 0
+        };
+      }
+      
+      const sum = sellerReviews.reduce((acc, curr) => acc + curr.rating, 0);
+      const average = Number((sum / sellerReviews.length).toFixed(1));
+      
+      return {
+        ...user,
+        ratingAverage: average,
+        ratingsCount: sellerReviews.length
+      };
+    });
+
+    if (areUserArraysEqual(usersRef.current, nextUsers)) {
+      return usersRef.current;
+    }
+    usersRef.current = nextUsers;
+    return nextUsers;
+  }, [rawUsers, products, allReviews, areUserArraysEqual]);
+
+  const currentUserRef = useRef<User | null>(null);
+  const currentUser = useMemo(() => {
+    if (!rawCurrentUser) {
+      currentUserRef.current = null;
+      return null;
+    }
+    const found = users.find(u => u.id === rawCurrentUser.id);
+    const nextUser = found 
+      ? { ...rawCurrentUser, ratingAverage: found.ratingAverage, ratingsCount: found.ratingsCount } 
+      : rawCurrentUser;
+    
+    if (areUsersEqual(currentUserRef.current, nextUser)) {
+      return currentUserRef.current;
+    }
+    currentUserRef.current = nextUser;
+    return nextUser;
+  }, [rawCurrentUser, users, areUsersEqual]);
+
+  const [allActiveProducts, setAllActiveProducts] = useState<Product[]>([]);
+
+  const [categories, setCategoriesRaw] = useState<Category[]>(() => {
     const saved = localStorage.getItem('veloria-categories');
     return saved ? JSON.parse(saved) : [];
   });
+
+  const setCategories = useCallback((value: React.SetStateAction<Category[]>) => {
+    setCategoriesRaw(prev => {
+      const next = typeof value === 'function' ? (value as Function)(prev) : value;
+      if (prev.length === next.length && prev.every((c, i) => c.id === next[i].id && c.name === next[i].name && c.icon === next[i].icon && c.slug === next[i].slug)) {
+        return prev;
+      }
+      return next;
+    });
+  }, []);
 
   const [orders, setOrdersRaw] = useState<Order[]>(() => {
     const saved = localStorage.getItem('veloria-orders');
@@ -78,16 +296,52 @@ export default function App() {
     });
   });
 
-  const setOrders: React.Dispatch<React.SetStateAction<Order[]>> = (value) => {
-    setOrdersRaw((prev) => {
+  const areOrdersEqual = useCallback((o1: Order, o2: Order): boolean => {
+    return (
+      o1.id === o2.id &&
+      o1.productId === o2.productId &&
+      o1.productTitle === o2.productTitle &&
+      o1.productImage === o2.productImage &&
+      o1.buyerId === o2.buyerId &&
+      o1.buyerName === o2.buyerName &&
+      o1.sellerId === o2.sellerId &&
+      o1.sellerName === o2.sellerName &&
+      o1.price === o2.price &&
+      o1.quantity === o2.quantity &&
+      o1.status === o2.status &&
+      o1.notes === o2.notes &&
+      o1.buyerMessage === o2.buyerMessage &&
+      o1.productPrice === o2.productPrice &&
+      o1.createdAt === o2.createdAt &&
+      o1.updatedAt === o2.updatedAt &&
+      o1.order_number === o2.order_number &&
+      o1.orderNumber === o2.orderNumber &&
+      o1.sellerRating === o2.sellerRating &&
+      o1.productRating === o2.productRating &&
+      o1.ratingComment === o2.ratingComment &&
+      o1.cancellationReason === o2.cancellationReason
+    );
+  }, []);
+
+  const areOrderArraysEqual = useCallback((arr1: Order[], arr2: Order[]): boolean => {
+    if (arr1.length !== arr2.length) return false;
+    return arr1.every((o, i) => areOrdersEqual(o, arr2[i]));
+  }, [areOrdersEqual]);
+
+  const setOrders = useCallback((value: React.SetStateAction<Order[]>) => {
+    setOrdersRaw(prev => {
       const next = typeof value === 'function' ? (value as Function)(prev) : value;
-      return [...next].sort((a, b) => {
+      const sortedNext = [...next].sort((a, b) => {
         const dateA = new Date(a.createdAt || a.created_at || 0).getTime();
         const dateB = new Date(b.createdAt || b.created_at || 0).getTime();
         return dateB - dateA;
       });
+      if (areOrderArraysEqual(prev, sortedNext)) {
+        return prev;
+      }
+      return sortedNext;
     });
-  };
+  }, [areOrderArraysEqual]);
 
   const [messages, setMessages] = useState<Message[]>(() => {
     const saved = localStorage.getItem('veloria-messages');
@@ -99,7 +353,7 @@ export default function App() {
     return saved ? JSON.parse(saved) : [];
   });
 
-  const [favorites, setFavorites] = useState<string[]>(() => {
+  const [favorites, setFavoritesRaw] = useState<string[]>(() => {
     const userId = localStorage.getItem('veloria-current-user-id');
     if (userId && userId !== 'null') {
       const saved = localStorage.getItem(`veloria-favorites-${userId}`);
@@ -108,6 +362,16 @@ export default function App() {
     const saved = localStorage.getItem('veloria-favorites');
     return saved ? JSON.parse(saved) : [];
   });
+
+  const setFavorites = useCallback((value: React.SetStateAction<string[]>) => {
+    setFavoritesRaw(prev => {
+      const next = typeof value === 'function' ? (value as Function)(prev) : value;
+      if (prev.length === next.length && prev.every((v, i) => v === next[i])) {
+        return prev;
+      }
+      return next;
+    });
+  }, []);
 
   const [followedSellers, setFollowedSellers] = useState<string[]>(() => {
     const saved = localStorage.getItem('veloria-followed-sellers');
@@ -139,8 +403,15 @@ export default function App() {
 
   // UI state
   const [currentView, setCurrentView] = useState<string>('market');
+  const [activeMarketTab, setActiveMarketTab] = useState<string>('all');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [selectedProfileUser, setSelectedProfileUser] = useState<User | null>(null);
+  const [rawSelectedProfileUser, setRawSelectedProfileUser] = useState<User | null>(null);
+  const selectedProfileUser = useMemo(() => {
+    if (!rawSelectedProfileUser) return null;
+    const found = users.find(u => u.id === rawSelectedProfileUser.id);
+    return found ? { ...rawSelectedProfileUser, ratingAverage: found.ratingAverage, ratingsCount: found.ratingsCount } : rawSelectedProfileUser;
+  }, [rawSelectedProfileUser, users]);
+  const setSelectedProfileUser = setRawSelectedProfileUser;
   const [viewHistory, setViewHistory] = useState<{ view: string; profileUser: User | null }[]>([]);
 
   const navigateTo = (view: string, profileUser: User | null = null) => {
@@ -163,8 +434,22 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const [sortBy, setSortBy] = useState<string>('newest');
+  const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
+
+  // Advanced Filtering States
+  const [filterPriceMin, setFilterPriceMin] = useState<number | ''>('');
+  const [filterPriceMax, setFilterPriceMax] = useState<number | ''>('');
+  const [filterProvince, setFilterProvince] = useState<string>('');
+  const [filterCity, setFilterCity] = useState<string>('');
+  const [filterCondition, setFilterCondition] = useState<string>('');
+  const [filterDelivery, setFilterDelivery] = useState<boolean | 'all'>('all');
+  const [filterFeatured, setFilterFeatured] = useState<boolean>(false);
+  const [filterVerified, setFilterVerified] = useState<boolean>(false);
+  const [filterHasOffer, setFilterHasOffer] = useState<boolean>(false);
+  const [isFilterPanelExpanded, setIsFilterPanelExpanded] = useState<boolean>(false);
 
   // Platform Centralized Settings State
   const [appSettings, setAppSettings] = useState<AppSettings>(() => {
@@ -212,7 +497,7 @@ export default function App() {
     return saved ? JSON.parse(saved) : [];
   });
 
-  useEffect(() => { localStorage.setItem('veloria-users', JSON.stringify(users)); }, [users]);
+  useEffect(() => { localStorage.setItem('veloria-users', JSON.stringify(rawUsers)); }, [rawUsers]);
   useEffect(() => { localStorage.setItem('veloria-current-user-id', currentUser ? currentUser.id : 'null'); }, [currentUser]);
   useEffect(() => { localStorage.setItem('veloria-products', JSON.stringify(products)); }, [products]);
   useEffect(() => { localStorage.setItem('veloria-categories', JSON.stringify(categories)); }, [categories]);
@@ -323,8 +608,13 @@ export default function App() {
             console.warn('Could not load current session user from Supabase:', sessionErr);
           }
           
-          if (sessionUser && (!currentUser || currentUser.id !== sessionUser.id)) {
-            setCurrentUser(sessionUser);
+          if (sessionUser) {
+            setRawCurrentUser(prev => {
+              if (!prev || !areUsersEqual(prev, sessionUser)) {
+                return sessionUser;
+              }
+              return prev;
+            });
           }
 
           // Fetch categories from Supabase
@@ -349,52 +639,24 @@ export default function App() {
             console.warn('Could not sync profiles from Supabase:', profileErr);
           }
 
-          // Fetch real products from Supabase so the marketplace is synchronized
+          // Fetch all reviews from Supabase
           try {
-            if (supabase) {
-              const {
-                data: { session }
-              } = await supabase.auth.getSession();
-
-              console.log("Current session =", session);
-              console.log("Current user =", session?.user);
+            const dbReviews = await supabaseService.getAllProductRatings();
+            if (dbReviews) {
+              setAllReviews(dbReviews);
             }
-            const dbProducts = await supabaseService.getProducts();
-            if (dbProducts) {
-              setProducts(dbProducts);
+          } catch (rErr) {
+            console.warn('Could not sync reviews from Supabase:', rErr);
+          }
 
-              // Extract unique seller IDs from loaded products and fetch their profiles individually
-              const sellerIds = Array.from(new Set(dbProducts.map(p => p.sellerId))).filter(Boolean);
-              if (sellerIds.length > 0) {
-                try {
-                  const sellerProfiles = await Promise.all(
-                    sellerIds.map(id => supabaseService.getProfile(id))
-                  );
-                  const validProfiles = sellerProfiles.filter(Boolean) as User[];
-                  if (validProfiles.length > 0) {
-                    setUsers(prev => {
-                      const merged = [...prev];
-                      validProfiles.forEach(p => {
-                        const idx = merged.findIndex(u => u.id === p.id);
-                        if (idx !== -1) {
-                          merged[idx] = p;
-                        } else {
-                          merged.push(p);
-                        }
-                      });
-                      return merged;
-                    });
-                  }
-                } catch (sellerErr) {
-                  console.warn('Could not load specific seller profiles:', sellerErr);
-                }
-              }
-            } else {
-              setProducts([]);
+          // Fetch all active products once to calculate category & shop counts
+          try {
+            const dbAllProducts = await supabaseService.getProducts({ status: 'active' });
+            if (dbAllProducts) {
+              setAllActiveProducts(dbAllProducts);
             }
-          } catch (productErr) {
-            console.warn('Could not sync products from Supabase:', productErr);
-            setProducts([]);
+          } catch (pErr) {
+            console.warn('Could not sync all products for counts:', pErr);
           }
         } catch (err) {
           console.warn('Gracefully handled Supabase load session fallback:', err);
@@ -402,7 +664,119 @@ export default function App() {
       }
     };
     loadSession();
-  }, [currentUser]);
+  }, [areUsersEqual]);
+
+  // Dynamic unified loader for products (from Supabase queries)
+  useEffect(() => {
+    const fetchFilteredAndSortedProducts = async () => {
+      if (!isSupabaseConfigured) {
+        console.log("Market returned early because: isSupabaseConfigured is false");
+        return;
+      }
+      
+      try {
+        setIsLoadingProducts(true);
+        
+        // Build options based on our unified engine
+        const options: ProductFilterOptions = {
+          status: 'active' // Show active products by default in the market
+        };
+
+        if (activeMarketTab === 'all') {
+          if (activeCategoryId) {
+            options.categoryId = activeCategoryId;
+          }
+
+          if (searchTerm && searchTerm.trim() !== '') {
+            options.searchTerm = searchTerm;
+          }
+
+          if (showFavoritesOnly) {
+            options.productIds = favorites;
+          }
+
+          // Apply advanced filters
+          if (filterPriceMin !== '') {
+            options.priceMin = Number(filterPriceMin);
+          }
+          if (filterPriceMax !== '') {
+            options.priceMax = Number(filterPriceMax);
+          }
+
+          options.sortBy = sortBy;
+        } else {
+          // For pages other than the general market, do not use user dropdown sorting
+          // or category/search filters, and instead use their fixed sorting criteria
+          options.sortBy = activeMarketTab; // 'top-rated', 'most-viewed', 'newest'
+        }
+
+        console.log(`Current Sort = ${sortBy}`);
+        console.log("Options object:", options);
+
+        const dbProducts = await supabaseService.getProducts(options);
+        console.log("===== FETCH RESULT =====");
+        console.log("currentUser =", currentUser);
+        console.log("dbProducts.length =", dbProducts?.length);
+        console.log("dbProducts =", dbProducts);
+        if (dbProducts) {
+          setProducts(dbProducts);
+          console.log("products were sent to state");
+
+          // Extract unique seller IDs from loaded products and fetch their profiles individually
+          const sellerIds = Array.from(new Set(dbProducts.map(p => p.sellerId))).filter(Boolean);
+          if (sellerIds.length > 0) {
+            try {
+              const sellerProfiles = await Promise.all(
+                sellerIds.map(id => supabaseService.getProfile(id))
+              );
+              const validProfiles = sellerProfiles.filter(Boolean) as User[];
+              if (validProfiles.length > 0) {
+                setUsers(prev => {
+                  const merged = [...prev];
+                  validProfiles.forEach(p => {
+                    const idx = merged.findIndex(u => u.id === p.id);
+                    if (idx !== -1) {
+                      merged[idx] = p;
+                    } else {
+                      merged.push(p);
+                    }
+                  });
+                  return merged;
+                });
+              }
+            } catch (sellerErr) {
+              console.warn('Could not load specific seller profiles for queried products:', sellerErr);
+            }
+          }
+        } else {
+          setProducts([]);
+        }
+      } catch (err) {
+        console.warn('Error loading products from Supabase Query Builder:', err);
+        setProducts([]);
+      } finally {
+        setIsLoadingProducts(false);
+      }
+    };
+
+    fetchFilteredAndSortedProducts();
+  }, [
+    activeMarketTab, 
+    activeCategoryId, 
+    searchTerm, 
+    sortBy, 
+    showFavoritesOnly, 
+    favorites,
+    filterPriceMin,
+    filterPriceMax,
+    filterProvince,
+    filterCity,
+    filterCondition,
+    filterDelivery,
+    filterFeatured,
+    filterVerified,
+    filterHasOffer
+  ]);
 
   // Load favorites dynamically from database when currentUser changes
   useEffect(() => {
@@ -652,29 +1026,149 @@ export default function App() {
     setReports((prev) => [newRep, ...prev]);
   };
 
-  const handleUpdateProductStatus = (productId: string, status: 'active' | 'hidden' | 'sold' | 'expired') => {
-    setProducts((prev) =>
-      prev.map((p) => {
-        if (p.id === productId) {
-          const isRenewing = p.status === 'expired' && status === 'active';
-          return {
-            ...p,
-            status,
-            createdAt: isRenewing ? new Date().toISOString() : p.createdAt
-          };
+  const executeUpdateProductStatus = async (productId: string, status: 'active' | 'hidden' | 'sold' | 'expired', reason: string = '') => {
+    console.log("executeUpdateProductStatus started");
+    const currentProd = products.find((p) => p.id === productId);
+    if (!currentProd) return;
+
+    let targetStatus: 'active' | 'hidden' | 'sold' | 'expired' = status;
+
+    if (status === 'active') {
+      if (currentProd.status === 'hidden') {
+        targetStatus = currentProd.isSold ? 'sold' : 'active';
+      } else {
+        targetStatus = 'active';
+      }
+    }
+
+    const isManagerAction = currentUser && (currentUser.role === 'admin' || currentUser.role === 'moderator') && (currentProd.sellerId !== currentUser.id);
+
+    if (targetStatus === 'hidden') {
+      console.log('Hide button clicked');
+      try {
+        console.log('Updating database...');
+        if (isSupabaseConfigured && supabaseService) {
+          await supabaseService.updateProductStatus(productId, 'hidden');
         }
-        return p;
-      })
-    );
+        console.log('Database updated successfully');
+
+        // Send notifications on success
+        if (isManagerAction) {
+          const bodyText = reason 
+            ? `قام فريق الإدارة بإخفاء منتجك مؤقتاً بسبب مخالفة سياسات المنصة.\nالسبب: ${reason}`
+            : `قام فريق الإدارة بإخفاء منتجك مؤقتاً بسبب مخالفة سياسات المنصة.`;
+          
+          const newNotif: Notification = {
+            id: `notif-hide-${Date.now()}-${Math.random()}`,
+            userId: currentProd.sellerId,
+            type: 'admin',
+            title: 'تم إخفاء أحد منتجاتك',
+            body: bodyText,
+            createdAt: new Date().toISOString(),
+            read: false
+          };
+          setNotifications((prev) => [newNotif, ...prev]);
+        }
+        console.log('Notification sent');
+
+        setProducts((prev) =>
+          prev.map((p) => {
+            if (p.id === productId) {
+              return {
+                ...p,
+                status: 'hidden'
+              };
+            }
+            return p;
+          })
+        );
+        console.log('Local state updated');
+        console.log('Hide العملية انتهت');
+      } catch (err: any) {
+        console.error('Failed to hide product:', err);
+      }
+    } else {
+      try {
+        if (isSupabaseConfigured && supabaseService) {
+          await supabaseService.updateProductStatus(productId, targetStatus);
+        }
+
+        setProducts((prev) =>
+          prev.map((p) => {
+            if (p.id === productId) {
+              const isRenewing = p.status === 'expired' && targetStatus === 'active';
+              return {
+                ...p,
+                status: targetStatus,
+                isSold: targetStatus === 'sold' ? true : (targetStatus === 'active' ? false : p.isSold),
+                createdAt: isRenewing ? new Date().toISOString() : p.createdAt
+              };
+            }
+            return p;
+          })
+        );
+
+        // Send notifications on success
+        if (isManagerAction) {
+          if (currentProd.status === 'hidden') {
+            const newNotif: Notification = {
+              id: `notif-unhide-${Date.now()}-${Math.random()}`,
+              userId: currentProd.sellerId,
+              type: 'admin',
+              title: 'تمت إعادة نشر منتجك',
+              body: 'بعد مراجعة المنتج تمت إعادة نشره داخل السوق.',
+              createdAt: new Date().toISOString(),
+              read: false
+            };
+            setNotifications((prev) => [newNotif, ...prev]);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to update product status in Supabase:', err);
+      }
+    }
   };
 
-  const handleDeleteProduct = async (productId: string) => {
+  const handleUpdateProductStatus = async (productId: string, status: 'active' | 'hidden' | 'sold' | 'expired') => {
+    console.log("handleUpdateProductStatus started");
+    const currentProd = products.find((p) => p.id === productId);
+    if (!currentProd) return;
+
+    let targetStatus: 'active' | 'hidden' | 'sold' | 'expired' = status;
+
+    if (status === 'active') {
+      if (currentProd.status === 'hidden') {
+        targetStatus = currentProd.isSold ? 'sold' : 'active';
+      } else {
+        targetStatus = 'active';
+      }
+    }
+
+    const isManagerAction = currentUser && (currentUser.role === 'admin' || currentUser.role === 'moderator') && (currentProd.sellerId !== currentUser.id);
+
+    if (targetStatus === 'hidden' && currentProd.status !== 'hidden' && isManagerAction) {
+      setHideProductModal({
+        isOpen: true,
+        productId,
+        status
+      });
+      return;
+    }
+
+    await executeUpdateProductStatus(productId, status, '');
+  };
+
+  const executeDeleteProduct = async (productId: string, reason: string = '') => {
+    const targetProduct = products.find((p) => p.id === productId);
+    if (!targetProduct) return;
+
+    const isManagerAction = currentUser && (currentUser.role === 'admin' || currentUser.role === 'moderator') && (targetProduct.sellerId !== currentUser.id);
+
     // 1. Storage cleanup and database delete for Supabase
     try {
       const { supabase, isSupabaseConfigured } = await import('./lib/supabase');
       if (isSupabaseConfigured && supabase) {
-        const targetProduct = products.find((p) => p.id === productId);
-        if (targetProduct && targetProduct.images && targetProduct.images.length > 0) {
+        if (targetProduct.images && targetProduct.images.length > 0) {
           const paths = targetProduct.images
             .map((url) => {
               const parts = url.split('/product-images/');
@@ -692,16 +1186,53 @@ export default function App() {
         await supabase.from('favorites').delete().eq('product_id', productId);
         await supabase.from('products').delete().eq('id', productId);
       }
+
+      // 2. Keep local state sync on success
+      setProducts((prev) => prev.filter((p) => p.id !== productId));
+      setFavorites((prev) => prev.filter((id) => id !== productId));
+      if (selectedProduct?.id === productId) {
+        setSelectedProduct(null);
+      }
+
+      // Send deletion notification on success
+      if (isManagerAction) {
+        const bodyText = reason 
+          ? `تم حذف المنتج من المنصة.\nالسبب: ${reason}`
+          : `تم حذف المنتج من المنصة.`;
+
+        const newNotif: Notification = {
+          id: `notif-delete-${Date.now()}-${Math.random()}`,
+          userId: targetProduct.sellerId,
+          type: 'admin',
+          title: 'تم حذف أحد منتجاتك',
+          body: bodyText,
+          createdAt: new Date().toISOString(),
+          read: false
+        };
+        setNotifications((prev) => [newNotif, ...prev]);
+      }
+
     } catch (err) {
       console.warn('Supabase automatic storage cleanup or DB deletion failed:', err);
     }
+  };
 
-    // 2. Keep local state sync
-    setProducts((prev) => prev.filter((p) => p.id !== productId));
-    setFavorites((prev) => prev.filter((id) => id !== productId));
-    if (selectedProduct?.id === productId) {
-      setSelectedProduct(null);
+  const handleDeleteProduct = async (productId: string) => {
+    const targetProduct = products.find((p) => p.id === productId);
+    if (!targetProduct) return;
+
+    const isManagerAction = currentUser && (currentUser.role === 'admin' || currentUser.role === 'moderator') && (targetProduct.sellerId !== currentUser.id);
+
+    if (isManagerAction) {
+      setDeleteProductModal({
+        isOpen: true,
+        productId
+      });
+      return;
     }
+
+    // If it is the seller themselves deleting, do it directly
+    await executeDeleteProduct(productId, '');
   };
 
   const handleUpdateProduct = async (updatedProduct: Product) => {
@@ -733,7 +1264,9 @@ export default function App() {
             category_id: finalCategoryId,
             status: updatedProduct.status,
             is_sold: updatedProduct.status === 'sold',
-            updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString(),
+            currency: updatedProduct.currency || 'ل.س',
+            city: updatedProduct.city || null
           })
           .eq('id', updatedProduct.id);
 
@@ -1163,8 +1696,7 @@ export default function App() {
         savedProd = await supabaseService.createProduct({
           ...cleanData,
           sellerId: currentUser.id,
-          status: productData.status || 'active',
-          location: productData.location || `${currentUser.city || 'دمشق'}، سوريا`
+          status: productData.status || 'active'
         });
       } catch (err) {
         console.error('Error creating product in Supabase:', err);
@@ -1174,7 +1706,7 @@ export default function App() {
           id: productData.id && String(productData.id).startsWith('prod-') ? productData.id : `prod-${Date.now()}`,
           sellerId: currentUser.id,
           createdAt: productData.createdAt || new Date().toISOString(),
-          rating: productData.rating || 5.0,
+          rating: productData.rating || 0,
           reviewsCount: productData.reviewsCount || 0
         };
       }
@@ -1184,7 +1716,7 @@ export default function App() {
         id: productData.id && String(productData.id).startsWith('prod-') ? productData.id : `prod-${Date.now()}`,
         sellerId: currentUser.id,
         createdAt: productData.createdAt || new Date().toISOString(),
-        rating: productData.rating || 5.0,
+        rating: productData.rating || 0,
         reviewsCount: productData.reviewsCount || 0
       };
     }
@@ -1230,37 +1762,23 @@ export default function App() {
         if (selectedProduct && selectedProduct.id === productId) {
           setSelectedProduct((prev) => prev ? { ...prev, rating: stats.average, reviewsCount: stats.count } : null);
         }
+        // Fetch updated reviews list
+        const dbReviews = await supabaseService.getAllProductRatings();
+        if (dbReviews) {
+          setAllReviews(dbReviews);
+        }
       } catch (err) {
         console.error('Error updating rating stats on review:', err);
       }
     }
   };
 
-  // Filters logic
-  const filteredProducts = products.filter((p) => {
-    // Hide violating (hidden) or expired content
-    if (p.status === 'hidden' || p.status === 'expired') return false;
+  // Filters logic - now fully delegating to Supabase queries
+  const filteredProducts = products;
 
-    // Category filter
-    if (activeCategoryId && p.categoryId !== activeCategoryId) return false;
-
-    // Favorites filter
-    if (showFavoritesOnly && !favorites.includes(p.id)) return false;
-
-    // Search filter
-    if (searchTerm.trim() !== '') {
-      const query = searchTerm.toLowerCase();
-      const matchTitle = p.title.toLowerCase().includes(query);
-      const matchDesc = p.description.toLowerCase().includes(query);
-      const matchLoc = p.location.toLowerCase().includes(query);
-      const seller = users.find((u) => u.id === p.sellerId);
-      const matchSeller = seller ? seller.name.toLowerCase().includes(query) : false;
-
-      return matchTitle || matchDesc || matchLoc || matchSeller;
-    }
-
-    return true;
-  });
+  const isAdvancedFilteringActive = 
+    filterPriceMin !== '' || 
+    filterPriceMax !== '';
 
   return (
     <div dir="rtl" className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 transition-colors duration-200">
@@ -1308,6 +1826,7 @@ export default function App() {
         showFavoritesOnly={showFavoritesOnly}
         onOpenMenu={() => setIsMenuOpen(true)}
         settings={appSettings}
+        showSearchAndCategories={currentView === 'market' && activeMarketTab === 'all'}
       />
 
       {/* Dynamic Back Button Indicator */}
@@ -1383,6 +1902,75 @@ export default function App() {
         </div>
       )}
 
+      {/* Market Tabs Sub-navigation Bar */}
+      <div className="bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800/60 shrink-0 font-sans">
+        <div className="max-w-7xl mx-auto px-4 py-2 flex items-center gap-2 overflow-x-auto text-xs justify-start md:justify-center scrollbar-none">
+          <button
+            onClick={() => {
+              setActiveMarketTab('all');
+              setCurrentView('market');
+            }}
+            className={`px-4 py-2 rounded-xl font-extrabold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
+              currentView === 'market' && activeMarketTab === 'all'
+                ? 'bg-amber-500 text-slate-950 shadow-xs font-black'
+                : 'bg-slate-50 dark:bg-slate-850 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-100 dark:border-slate-800'
+            }`}
+          >
+            🛍️ السوق العام
+          </button>
+
+          <button
+            onClick={() => {
+              setActiveMarketTab('top-rated');
+              setCurrentView('market');
+            }}
+            className={`px-4 py-2 rounded-xl font-extrabold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
+              currentView === 'market' && activeMarketTab === 'top-rated'
+                ? 'bg-amber-500 text-slate-950 shadow-xs font-black'
+                : 'bg-slate-50 dark:bg-slate-850 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-100 dark:border-slate-800'
+            }`}
+          >
+            ⭐ الأعلى تقييماً
+          </button>
+
+          <button
+            onClick={() => {
+              setActiveMarketTab('newest');
+              setCurrentView('market');
+            }}
+            className={`px-4 py-2 rounded-xl font-extrabold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
+              currentView === 'market' && activeMarketTab === 'newest'
+                ? 'bg-amber-500 text-slate-950 shadow-xs font-black'
+                : 'bg-slate-50 dark:bg-slate-850 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-100 dark:border-slate-800'
+            }`}
+          >
+            🆕 المضافة حديثاً
+          </button>
+
+          <button
+            onClick={() => {
+              setActiveMarketTab('most-viewed');
+              setCurrentView('market');
+            }}
+            className={`px-4 py-2 rounded-xl font-extrabold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
+              currentView === 'market' && activeMarketTab === 'most-viewed'
+                ? 'bg-amber-500 text-slate-950 shadow-xs font-black'
+                : 'bg-slate-50 dark:bg-slate-850 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-100 dark:border-slate-800'
+            }`}
+          >
+            🔥 الأكثر مشاهدة
+          </button>
+
+          {/* Reserved space for Offers button in the future */}
+          <button
+            disabled
+            className="px-4 py-2 rounded-xl font-extrabold transition-all shrink-0 opacity-40 cursor-not-allowed flex items-center gap-1.5 bg-slate-50 dark:bg-slate-850/50 text-slate-400 dark:text-slate-600 border border-dashed border-slate-200 dark:border-slate-800"
+          >
+            🏷️ العروض (قريباً)
+          </button>
+        </div>
+      </div>
+
       {/* Main Viewport Content */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 font-sans">
         {currentUser && (currentUser.status === 'suspended' || currentUser.status === 'banned') ? (
@@ -1424,6 +2012,15 @@ export default function App() {
           <>
             {/* VIEW 1: Market (Home & Browse) */}
             {currentView === 'market' && (
+              (() => {
+                console.log("===== RENDER MARKET =====");
+                console.log("products state =", products.length);
+                console.log(products);
+                console.log("currentView =", currentView);
+                console.log("activeMarketTab =", activeMarketTab);
+                console.log("currentUser =", currentUser);
+                return null;
+              })() || (
           <div className="space-y-8">
             {/* Slogan Banner */}
             <div className="bg-slate-100 dark:bg-slate-900/40 p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-800/80 shadow-xs relative overflow-hidden flex flex-col md:flex-row items-center justify-between gap-6">
@@ -1446,8 +2043,10 @@ export default function App() {
               {/* Quick stats on banner */}
               <div className="grid grid-cols-2 gap-4 shrink-0 bg-white dark:bg-slate-950 p-4 rounded-2xl border border-slate-200 dark:border-slate-800">
                 <div className="text-center">
-                  <span className="text-xl font-black text-emerald-600 dark:text-emerald-400">{products.filter((p) => p.status === 'active').length}</span>
-                  <p className="text-[9px] text-slate-500 dark:text-slate-400 mt-0.5">منتجات معروضة</p>
+                  <span className="text-xl font-black text-emerald-600 dark:text-emerald-400">
+                    {products.filter((p) => p.status === 'active' || p.status === 'sold').length}
+                  </span>
+                  <p className="text-[9px] text-slate-500 dark:text-slate-400 mt-0.5">المنتجات (نشطة ومباعة)</p>
                 </div>
                 <div className="text-center">
                   <span className="text-xl font-black text-emerald-600 dark:text-emerald-400">{users.length}</span>
@@ -1456,27 +2055,114 @@ export default function App() {
               </div>
             </div>
 
+            {/* Toolbar: Products Count & Sort Selector */}
+            {activeMarketTab === 'all' && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800/80 font-sans shadow-2xs">
+                <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-start">
+                  <div className="text-right">
+                    <span className="text-xs text-slate-400 font-bold">المنتجات المعروضة:</span>
+                    <span className="text-xs font-black text-amber-500 mr-1.5">
+                      {products.filter((p) => p.status === 'active').length} نشط 
+                      {products.filter((p) => p.status === 'sold').length > 0 && ` (${products.filter((p) => p.status === 'sold').length} مباع)`}
+                    </span>
+                  </div>
+                  {isLoadingProducts && (
+                    <div className="flex items-center gap-1.5 text-slate-400 text-[11px] font-bold animate-pulse">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />
+                      <span>جاري التحديث...</span>
+                    </div>
+                  )}
+                </div>
+                
+                <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
+                  {/* Advanced Filters Button */}
+                  <button
+                    id="btn-toggle-filter-panel"
+                    onClick={() => setIsFilterPanelExpanded(!isFilterPanelExpanded)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                      isFilterPanelExpanded 
+                        ? 'bg-amber-500 border-amber-500 text-slate-950 shadow-sm font-black' 
+                        : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900'
+                    }`}
+                  >
+                    <SlidersHorizontal className="w-3.5 h-3.5" />
+                    <span>فلاتر متقدمة</span>
+                    {isAdvancedFilteringActive && (
+                      <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                    )}
+                  </button>
+
+                  <span className="text-xs text-slate-500 font-bold shrink-0">ترتيب حسب:</span>
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                    className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 font-bold focus:outline-none focus:ring-1 focus:ring-amber-500/50 cursor-pointer w-full sm:w-44"
+                  >
+                    <option value="newest">الأحدث (الافتراضي)</option>
+                    <option value="oldest">الأقدم</option>
+                    <option value="price-desc">الأعلى سعراً</option>
+                    <option value="price-asc">الأقل سعراً</option>
+                    <option value="top-rated">الأعلى تقييماً</option>
+                    <option value="most-viewed">الأكثر مشاهدة</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {/* Advanced Product Filter Panel */}
+            {activeMarketTab === 'all' && isFilterPanelExpanded && (
+              <ProductFilterPanel
+                priceMin={filterPriceMin}
+                setPriceMin={setFilterPriceMin}
+                priceMax={filterPriceMax}
+                setPriceMax={setFilterPriceMax}
+                onClearAll={() => {
+                  setFilterPriceMin('');
+                  setFilterPriceMax('');
+                }}
+              />
+            )}
+
             {/* Active Filters Bar */}
-            {(activeCategoryId || searchTerm.trim() !== '' || showFavoritesOnly) && (
-              <div className="flex items-center justify-between gap-4 p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800/80 text-xs text-right">
-                <div className="flex items-center gap-2">
-                  <SlidersHorizontal className="w-4 h-4 text-amber-500" />
-                  <span className="text-slate-500 font-bold">الفلاتر النشطة:</span>
+            {activeMarketTab === 'all' && (activeCategoryId || searchTerm.trim() !== '' || showFavoritesOnly || isAdvancedFilteringActive) && (
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800/80 text-xs text-right shadow-2xs">
+                <div className="flex flex-wrap items-center gap-2">
+                  <SlidersHorizontal className="w-4 h-4 text-amber-500 shrink-0" />
+                  <span className="text-slate-500 font-bold ml-1">الفلاتر النشطة:</span>
+                  
                   {activeCategoryId && (
-                    <span className="bg-amber-500/15 text-amber-700 dark:text-amber-400 font-bold px-2.5 py-0.5 rounded-full text-[10px]">
-                      قسم: {categories.find((c) => c.id === activeCategoryId)?.name}
+                    <span className="inline-flex items-center gap-1 bg-amber-500/15 text-amber-700 dark:text-amber-400 font-bold px-2.5 py-1 rounded-full text-[10px]">
+                      <span>قسم: {categories.find((c) => c.id === activeCategoryId)?.name}</span>
+                      <button onClick={() => setActiveCategoryId(null)} className="hover:text-rose-500 font-bold font-mono text-[11px] cursor-pointer">×</button>
                     </span>
                   )}
                   {searchTerm.trim() !== '' && (
-                    <span className="bg-slate-100 dark:bg-slate-850 text-slate-600 dark:text-slate-300 font-bold px-2.5 py-0.5 rounded-full text-[10px]">
-                      بحث عن: "{searchTerm}"
+                    <span className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-850 text-slate-600 dark:text-slate-300 font-bold px-2.5 py-1 rounded-full text-[10px]">
+                      <span>بحث عن: "{searchTerm}"</span>
+                      <button onClick={() => setSearchTerm('')} className="hover:text-rose-500 font-bold font-mono text-[11px] cursor-pointer">×</button>
                     </span>
                   )}
                   {showFavoritesOnly && (
-                    <span className="bg-rose-500/10 text-rose-500 font-bold px-2.5 py-0.5 rounded-full text-[10px]">
-                      المفضلة فقط ❤️
+                    <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-500 font-bold px-2.5 py-1 rounded-full text-[10px]">
+                      <span>المفضلة فقط ❤️</span>
+                      <button onClick={() => setShowFavoritesOnly(false)} className="hover:text-rose-500 font-bold font-mono text-[11px] cursor-pointer">×</button>
                     </span>
                   )}
+
+                  {/* Advanced Filters badges with individual close button */}
+                  {filterPriceMin !== '' && (
+                    <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold px-2.5 py-1 rounded-full text-[10px]">
+                      <span>السعر من: {filterPriceMin} ل.س</span>
+                      <button onClick={() => setFilterPriceMin('')} className="hover:text-rose-500 font-bold font-mono text-[11px] cursor-pointer">×</button>
+                    </span>
+                  )}
+                  {filterPriceMax !== '' && (
+                    <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold px-2.5 py-1 rounded-full text-[10px]">
+                      <span>السعر إلى: {filterPriceMax} ل.س</span>
+                      <button onClick={() => setFilterPriceMax('')} className="hover:text-rose-500 font-bold font-mono text-[11px] cursor-pointer">×</button>
+                    </span>
+                  )}
+
                 </div>
 
                 <button
@@ -1484,8 +2170,17 @@ export default function App() {
                     setActiveCategoryId(null);
                     setSearchTerm('');
                     setShowFavoritesOnly(false);
+                    setFilterPriceMin('');
+                    setFilterPriceMax('');
+                    setFilterProvince('');
+                    setFilterCity('');
+                    setFilterCondition('');
+                    setFilterDelivery('all');
+                    setFilterFeatured(false);
+                    setFilterVerified(false);
+                    setFilterHasOffer(false);
                   }}
-                  className="text-amber-600 dark:text-amber-400 hover:underline font-bold text-[11px] cursor-pointer"
+                  className="text-amber-600 dark:text-amber-400 hover:underline font-bold text-[11px] cursor-pointer shrink-0"
                 >
                   إعادة تعيين الكل ×
                 </button>
@@ -1493,7 +2188,7 @@ export default function App() {
             )}
 
             {/* View Dispatcher inside Market */}
-            {activeCategoryId || searchTerm.trim() !== '' || showFavoritesOnly ? (
+            {activeMarketTab === 'all' && (activeCategoryId || searchTerm.trim() !== '' || showFavoritesOnly || isAdvancedFilteringActive) ? (
               // Search / Categorized product list
               filteredProducts.length === 0 ? (
                 <div className="text-center py-20 bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800/60 p-6 space-y-3">
@@ -1533,148 +2228,200 @@ export default function App() {
               // Default Homepage Layout (with required sections)
               <div className="space-y-10 text-right">
                 
-                {/* 1. Suggested Stores Section (المتاجر المقترحة) */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <button
-                      onClick={() => setCurrentView('shops')}
-                      className="text-xs text-amber-600 dark:text-amber-400 hover:underline font-bold"
-                    >
-                      تصفح دليل المتاجر كاملة ←
-                    </button>
-                    <h3 className="text-sm font-black text-slate-850 dark:text-white flex items-center gap-2">
-                      متاجر مقترحة وموثوقة
-                      <Store className="w-4.5 h-4.5 text-amber-500" />
-                    </h3>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                    {users.slice(0, 3).map((seller) => {
-                      const sellerProdsCount = products.filter(p => p.sellerId === seller.id).length;
-                      return (
-                        <div 
-                          key={seller.id}
-                          className="p-5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850/80 rounded-2xl hover:border-amber-500/20 transition-all flex items-center justify-between gap-4"
+                {/* Tab: السوق العام */}
+                {activeMarketTab === 'all' && (
+                  <>
+                    {/* 1. Suggested Stores Section (المتاجر المقترحة) */}
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <button
+                          onClick={() => setCurrentView('shops')}
+                          className="text-xs text-amber-600 dark:text-amber-400 hover:underline font-bold"
                         >
-                          <div className="flex items-center gap-3">
-                            <img src={seller.avatar} className="w-12 h-12 rounded-full object-cover shrink-0 border border-slate-100 dark:border-slate-800" />
-                            <div className="space-y-1 text-right">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <h4 className="font-extrabold text-xs text-slate-800 dark:text-slate-100">{seller.name}</h4>
-                                {seller.badges.includes('verified') && (
-                                  <span className="text-[9px] bg-emerald-500/10 text-emerald-500 px-1.5 py-0.2 rounded-full font-bold">موثوق</span>
-                                )}
+                          تصفح دليل المتاجر كاملة ←
+                        </button>
+                        <h3 className="text-sm font-black text-slate-850 dark:text-white flex items-center gap-2">
+                          متاجر مقترحة وموثوقة
+                          <Store className="w-4.5 h-4.5 text-amber-500" />
+                        </h3>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                        {users.slice(0, 3).map((seller) => {
+                          const sellerProdsCount = products.filter(p => p.sellerId === seller.id).length;
+                          return (
+                            <div 
+                              key={seller.id}
+                              className="p-5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850/80 rounded-2xl hover:border-amber-500/20 transition-all flex items-center justify-between gap-4"
+                            >
+                              <div className="flex items-center gap-3">
+                                <img src={seller.avatar} className="w-12 h-12 rounded-full object-cover shrink-0 border border-slate-100 dark:border-slate-800" />
+                                <div className="space-y-1 text-right">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <h4 className="font-extrabold text-xs text-slate-800 dark:text-slate-100">{seller.name}</h4>
+                                    {seller.badges.includes('verified') && (
+                                      <span className="text-[9px] bg-emerald-500/10 text-emerald-500 px-1.5 py-0.2 rounded-full font-bold">موثوق</span>
+                                    )}
+                                  </div>
+                                  <p className="text-[10px] text-slate-400">المنتجات النشطة: {sellerProdsCount} إعلان</p>
+                                  <div className="text-[10px] text-amber-500 font-bold">⭐ {seller.ratingAverage || '4.9'} ({seller.ratingsCount || '15'})</div>
+                                </div>
                               </div>
-                              <p className="text-[10px] text-slate-400">المنتجات النشطة: {sellerProdsCount} إعلان</p>
-                              <div className="text-[10px] text-amber-500 font-bold">⭐ {seller.ratingAverage || '4.9'} ({seller.ratingsCount || '15'})</div>
+                              <button
+                                onClick={() => {
+                                  setSelectedProfileUser(seller);
+                                  setCurrentView('profile');
+                                }}
+                                className="text-[10px] font-black bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-xl cursor-pointer shrink-0 transition-colors"
+                              >
+                                زيارة المتجر
+                              </button>
                             </div>
-                          </div>
-                          <button
-                            onClick={() => {
-                              setSelectedProfileUser(seller);
-                              setCurrentView('profile');
-                            }}
-                            className="text-[10px] font-black bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-xl cursor-pointer shrink-0 transition-colors"
-                          >
-                            زيارة المتجر
-                          </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* 2. All Active Products Section (سوق فيلوريا العام) */}
+                    <div className="space-y-4 pt-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-slate-400 font-bold">تصفح التشكيلة الكاملة من المعروضات</span>
+                        <h3 className="text-sm font-black text-slate-850 dark:text-white flex items-center gap-2">
+                          سوق فيلوريا العام
+                          <ShoppingBag className="w-4.5 h-4.5 text-amber-500" />
+                        </h3>
+                      </div>
+
+                      {products.length === 0 ? (
+                        <div className="p-12 text-center bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-slate-400 text-xs">
+                          لا توجد منتجات نشطة حالياً في السوق.
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                          {products.map((prod) => (
+                            <ProductCard
+                              key={`market-all-${prod.id}`}
+                              product={prod}
+                              isFavorite={favorites.includes(prod.id)}
+                              onToggleFavorite={handleToggleFavorite}
+                              onViewDetails={handleViewProduct}
+                              currentUser={currentUser}
+                              users={users}
+                              onVisitStore={(seller) => navigateTo('profile', seller)}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
 
-                {/* 2. Top Rated Products Section (أعلى المنتجات تقييماً) */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-400 font-bold">المنتجات الأكثر مصداقية وثقة</span>
-                    <h3 className="text-sm font-black text-slate-850 dark:text-white flex items-center gap-2">
-                      أعلى المنتجات تقييماً في السوق
-                      <Star className="w-4.5 h-4.5 text-amber-500 fill-amber-500/20" />
-                    </h3>
-                  </div>
+                {/* Tab: الأعلى تقييماً */}
+                {activeMarketTab === 'top-rated' && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-400 font-bold">المنتجات الأكثر مصداقية وثقة من العملاء</span>
+                      <h3 className="text-sm font-black text-slate-850 dark:text-white flex items-center gap-2">
+                        الأعلى تقييماً في السوق
+                        <Star className="w-4.5 h-4.5 text-amber-500 fill-amber-500/20" />
+                      </h3>
+                    </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                    {[...products]
-                      .sort((a, b) => b.rating - a.rating)
-                      .slice(0, 4)
-                      .map((prod) => (
-                        <ProductCard
-                          key={`rated-${prod.id}`}
-                          product={prod}
-                          isFavorite={favorites.includes(prod.id)}
-                          onToggleFavorite={handleToggleFavorite}
-                          onViewDetails={handleViewProduct}
-                          currentUser={currentUser}
-                          users={users}
-                          onVisitStore={(seller) => navigateTo('profile', seller)}
-                        />
-                    ))}
+                    {products.length === 0 ? (
+                      <div className="p-12 text-center bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-slate-400 text-xs">
+                        لا توجد منتجات نشطة حالياً.
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                        {products.map((prod) => (
+                          <ProductCard
+                            key={`tab-rated-${prod.id}`}
+                            product={prod}
+                            isFavorite={favorites.includes(prod.id)}
+                            onToggleFavorite={handleToggleFavorite}
+                            onViewDetails={handleViewProduct}
+                            currentUser={currentUser}
+                            users={users}
+                            onVisitStore={(seller) => navigateTo('profile', seller)}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </div>
+                )}
 
-                {/* 3. Newest Products Section (أحدث المنتجات) */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-400 font-bold">تم نشرها مؤخراً بواسطة التجار</span>
-                    <h3 className="text-sm font-black text-slate-850 dark:text-white flex items-center gap-2">
-                      أحدث المنتجات المضافة حديثاً
-                      <PlusCircle className="w-4.5 h-4.5 text-amber-500" />
-                    </h3>
-                  </div>
+                {/* Tab: المضافة حديثاً */}
+                {activeMarketTab === 'newest' && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-400 font-bold">أحدث الإعلانات والمنتجات المضافة حديثاً</span>
+                      <h3 className="text-sm font-black text-slate-850 dark:text-white flex items-center gap-2">
+                        المضافة حديثاً
+                        <PlusCircle className="w-4.5 h-4.5 text-amber-500" />
+                      </h3>
+                    </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                    {[...products]
-                      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-                      .slice(0, 4)
-                      .map((prod) => (
-                        <ProductCard
-                          key={`new-${prod.id}`}
-                          product={prod}
-                          isFavorite={favorites.includes(prod.id)}
-                          onToggleFavorite={handleToggleFavorite}
-                          onViewDetails={handleViewProduct}
-                          currentUser={currentUser}
-                          users={users}
-                          onVisitStore={(seller) => navigateTo('profile', seller)}
-                        />
-                    ))}
+                    {products.length === 0 ? (
+                      <div className="p-12 text-center bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-slate-400 text-xs">
+                        لا توجد منتجات نشطة حالياً.
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                        {products.map((prod) => (
+                          <ProductCard
+                            key={`tab-newest-${prod.id}`}
+                            product={prod}
+                            isFavorite={favorites.includes(prod.id)}
+                            onToggleFavorite={handleToggleFavorite}
+                            onViewDetails={handleViewProduct}
+                            currentUser={currentUser}
+                            users={users}
+                            onVisitStore={(seller) => navigateTo('profile', seller)}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </div>
+                )}
 
-                {/* 4. Most Viewed Products Section (المنتجات الأكثر مشاهدة) */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-400 font-bold">المنتجات الأكثر رواجاً واهتماماً</span>
-                    <h3 className="text-sm font-black text-slate-850 dark:text-white flex items-center gap-2">
-                      المنتجات الأكثر مشاهدة وتفاعلاً
-                      <Sparkles className="w-4.5 h-4.5 text-amber-500" />
-                    </h3>
-                  </div>
+                {/* Tab: الأكثر مشاهدة */}
+                {activeMarketTab === 'most-viewed' && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-400 font-bold">المنتجات النشطة الأكثر رواجاً وزيارة</span>
+                      <h3 className="text-sm font-black text-slate-850 dark:text-white flex items-center gap-2">
+                        الأكثر مشاهدة وتفاعلاً
+                        <Flame className="w-4.5 h-4.5 text-amber-500 fill-amber-500/20" />
+                      </h3>
+                    </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                    {[...products]
-                      .sort((a, b) => (b.viewsCount || 0) - (a.viewsCount || 0))
-                      .slice(0, 4)
-                      .map((prod) => (
-                        <ProductCard
-                          key={`viewed-${prod.id}`}
-                          product={prod}
-                          isFavorite={favorites.includes(prod.id)}
-                          onToggleFavorite={handleToggleFavorite}
-                          onViewDetails={handleViewProduct}
-                          currentUser={currentUser}
-                          users={users}
-                          onVisitStore={(seller) => navigateTo('profile', seller)}
-                        />
-                    ))}
+                    {products.length === 0 ? (
+                      <div className="p-12 text-center bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-slate-400 text-xs">
+                        لا توجد منتجات نشطة حالياً.
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                        {products.map((prod) => (
+                          <ProductCard
+                            key={`tab-most-viewed-${prod.id}`}
+                            product={prod}
+                            isFavorite={favorites.includes(prod.id)}
+                            onToggleFavorite={handleToggleFavorite}
+                            onViewDetails={handleViewProduct}
+                            currentUser={currentUser}
+                            users={users}
+                            onVisitStore={(seller) => navigateTo('profile', seller)}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </div>
+                )}
 
               </div>
             )}
           </div>
-        )}
+        ))}
 
         {/* VIEW 2: Categories view listing */}
         {currentView === 'categories' && (
@@ -1684,7 +2431,7 @@ export default function App() {
               setActiveCategoryId(id);
               setCurrentView('market');
             }}
-            productsCountByCategory={(catId) => products.filter((p) => p.categoryId === catId).length}
+            productsCountByCategory={(catId) => allActiveProducts.filter((p) => p.categoryId === catId).length}
           />
         )}
 
@@ -1692,7 +2439,7 @@ export default function App() {
         {currentView === 'shops' && (
           <ShopsView
             users={users}
-            products={products}
+            products={allActiveProducts}
             currentUser={currentUser}
             onFollow={handleToggleFollow}
             followedSellers={followedSellers}
@@ -2049,6 +2796,8 @@ export default function App() {
               setNotifications={setNotifications}
               setContributions={setContributions}
               setVerificationRequests={setVerificationRequests}
+              onSelectProduct={setSelectedProduct}
+              onSelectSeller={(seller) => navigateTo('profile', seller)}
             />
           </div>
         )}
@@ -2110,6 +2859,29 @@ export default function App() {
           accountNumber={shamCashAccount}
         />
       )}
+
+      {/* Hide Product Modal */}
+      <HideProductModal
+        isOpen={hideProductModal.isOpen}
+        onClose={() => setHideProductModal(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={(reason) => {
+          executeUpdateProductStatus(hideProductModal.productId, hideProductModal.status, reason);
+        }}
+      />
+
+      {/* Delete Product Modal */}
+      <AdminPromptModal
+        isOpen={deleteProductModal.isOpen}
+        title="حذف المنتج"
+        description="يرجى كتابة سبب حذف المنتج. سيتم إرسال هذا السبب إلى التاجر ضمن الإشعار."
+        placeholder="مثال: انتهاك شروط البيع، منتج مكرر..."
+        cancelLabel="إلغاء"
+        confirmLabel="تأكيد الحذف"
+        onClose={() => setDeleteProductModal(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={(reason) => {
+          executeDeleteProduct(deleteProductModal.productId, reason);
+        }}
+      />
     </div>
   );
 }

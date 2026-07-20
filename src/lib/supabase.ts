@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { Product, User, Category, Order, Review, Message, Report, AppSettings } from '../types';
+import { Product, User, Category, Order, Review, Message, Report, AppSettings, ProductFilterOptions } from '../types';
 
 // Retrieve environment variables
 const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || '';
@@ -38,7 +38,7 @@ export function mapProfileToUser(p: any, authEmail?: string): User {
     whatsapp: p.whatsapp || p.whatsapp_number || '',
     whatsapp_number: p.whatsapp || p.whatsapp_number || '',
     followersCount: 0,
-    ratingAverage: Number(p.rating) || 5.0,
+    ratingAverage: p.rating !== undefined && p.rating !== null ? Number(p.rating) : 0,
     ratingsCount: 0,
     isPremium: p.role === 'admin',
     role: p.role || 'user',
@@ -327,26 +327,128 @@ export const supabaseService = {
   },
 
   // Products
-  async getProducts(): Promise<Product[]> {
+  async getProducts(options?: ProductFilterOptions): Promise<Product[]> {
     if (!supabase) return [];
-    const {
-      data: { session }
-    } = await supabase.auth.getSession();
 
-    console.log("getProducts session =", session);
-    console.log("getProducts user =", session?.user?.id);
-
-    const { data, error } = await supabase
+    let query = supabase
       .from('products')
       .select(`
         *,
         product_images(*)
       `);
 
-    console.log("Products from Supabase", data);
+    // 1. Filter by Status (by default we query all, but we can filter specifically)
+    if (options?.status) {
+      if (options.status === 'active') {
+        query = query.in('status', ['active', 'sold']);
+      } else {
+        query = query.eq('status', options.status);
+      }
+    }
+
+    // 2. Filter by Category
+    if (options?.categoryId) {
+      const catId = typeof options.categoryId === 'string' && options.categoryId.startsWith('cat-')
+        ? parseInt(options.categoryId.replace('cat-', ''), 10)
+        : Number(options.categoryId);
+      if (!isNaN(catId)) {
+        query = query.eq('category_id', catId);
+      }
+    }
+
+    // 2b. Filter by Product IDs (e.g. for favorites list)
+    if (options?.productIds) {
+      if (options.productIds.length > 0) {
+        query = query.in('id', options.productIds);
+      } else {
+        // Return nothing if an empty array is explicitly passed
+        query = query.eq('id', '00000000-0000-0000-0000-000000000000');
+      }
+    }
+
+    // 3. Search Term (Title, description)
+    if (options?.searchTerm && options.searchTerm.trim() !== '') {
+      const term = `%${options.searchTerm.trim()}%`;
+      query = query.or(`title.ilike.${term},description.ilike.${term}`);
+    }
+
+    // 4. Future Extendable Filters
+    if (options?.priceMin !== undefined && options?.priceMin !== null) {
+      query = query.gte('price', options.priceMin);
+    }
+    if (options?.priceMax !== undefined && options?.priceMax !== null) {
+      query = query.lte('price', options.priceMax);
+    }
+    if (options?.city) {
+      query = query.eq('city', options.city);
+    }
+    if (options?.currency) {
+      query = query.eq('currency', options.currency);
+    }
+    if (options?.isVerified !== undefined && options?.isVerified !== null) {
+      query = query.eq('is_verified', options.isVerified);
+    }
+    if (options?.isFeatured !== undefined && options?.isFeatured !== null) {
+      query = query.eq('is_featured', options.isFeatured);
+    }
+    if (options?.hasOffer !== undefined && options?.hasOffer !== null) {
+      query = query.eq('has_offer', options.hasOffer);
+    }
+    if (options?.condition) {
+      query = query.eq('condition', options.condition);
+    }
+    if (options?.delivery !== undefined && options?.delivery !== null) {
+      query = query.eq('delivery', options.delivery);
+    }
+
+    // 5. Apply sorting
+    const sort = options?.sortBy || 'newest';
+    console.log(`Received Sort = ${sort}`);
+    switch (sort) {
+      case 'oldest':
+        console.log('Entered oldest');
+        query = query.order('created_at', { ascending: true });
+        break;
+      case 'price-high':
+      case 'price-desc':
+        console.log('Entered price-desc');
+        query = query.order('price', { ascending: false });
+        break;
+      case 'price-low':
+      case 'price-asc':
+        console.log('Entered price-asc');
+        query = query.order('price', { ascending: true });
+        break;
+      case 'top-rated':
+        console.log('Entered top-rated');
+        query = query.order('rating_average', { ascending: false, nullsFirst: false });
+        break;
+      case 'most-viewed':
+        console.log('Entered most-viewed');
+        query = query.order('views_count', { ascending: false, nullsFirst: false });
+        break;
+      case 'newest':
+      default:
+        console.log('Entered newest');
+        query = query.order('created_at', { ascending: false });
+        break;
+    }
+
+    console.log('Executing Query...');
+    const { data, error } = await query;
+
+    if (data) {
+      console.log('First 5 queried products:', data.slice(0, 5).map((p: any) => ({
+        title: p.title,
+        price: p.price,
+        views_count: p.views_count,
+        rating_average: p.rating_average,
+        created_at: p.created_at
+      })));
+    }
 
     if (error) {
-      console.warn('Error fetching products from Supabase:', error);
+      console.warn('Error fetching products with query builder from Supabase:', error);
       throw error;
     }
 
@@ -360,16 +462,17 @@ export const supabaseService = {
         title: p.title,
         description: p.description || '',
         price: Number(p.price),
-        currency: 'ل.س',
+        currency: p.currency || 'ل.س',
         categoryId: p.category_id,
         images: sortedImages.length > 0 ? sortedImages : ['https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=600&h=400&q=80'],
         sellerId: p.user_id,
         status: p.status as any,
-        location: p.location || 'الرياض، المملكة العربية السعودية',
+        isSold: p.is_sold || false,
         createdAt: p.created_at,
-        rating: p.rating_average !== undefined && p.rating_average !== null ? Number(p.rating_average) : 5.0,
+        rating: p.rating_average !== undefined && p.rating_average !== null ? Number(p.rating_average) : 0,
         reviewsCount: p.ratings_count !== undefined && p.ratings_count !== null ? Number(p.ratings_count) : 0,
-        viewsCount: p.views_count || 0
+        viewsCount: p.views_count || 0,
+        city: p.city || null
       };
     });
   },
@@ -392,7 +495,9 @@ export const supabaseService = {
       description: product.description,
       price: product.price,
       status: product.status || 'active',
-      is_sold: product.status === 'sold'
+      is_sold: product.status === 'sold',
+      currency: product.currency || 'ل.س',
+      city: product.city || null
     };
 
     console.log('--- [createProduct START] ---');
@@ -400,12 +505,22 @@ export const supabaseService = {
     console.log('2- قيمة user_id:', product.sellerId);
     console.log('3- قيمة category_id:', finalCategoryId);
 
+    console.log("========== CREATE PRODUCT DEBUG ==========");
+    console.log("Received Product =", product);
+    console.log("Product.city =", product.city);
+    console.log("Insert Payload =", insertPayload);
+    console.log("Insert Payload.city =", insertPayload.city);
+    console.log("==========================================");
+
     // Insert Product core
     const { data: prodData, error: prodError } = await supabase
       .from('products')
       .insert(insertPayload)
       .select()
       .single();
+
+    console.log("Insert Result =", prodData);
+    console.log("Insert Error =", prodError);
 
     console.log('4- نتيجة insert كاملة:', { prodData, prodError });
     console.log('5- قيمة prodData:', prodData);
@@ -457,28 +572,34 @@ export const supabaseService = {
       title: prodData.title,
       description: prodData.description || '',
       price: Number(prodData.price),
-      currency: 'ل.س',
+      currency: prodData.currency || 'ل.س',
       categoryId: prodData.category_id,
       images: product.images,
       sellerId: prodData.user_id,
       status: prodData.status,
-      location: product.location || 'الرياض، المملكة العربية السعودية',
+      isSold: prodData.is_sold || false,
       createdAt: prodData.created_at,
-      rating: 5.0,
+      rating: 0,
       reviewsCount: 0,
-      viewsCount: 0
+      viewsCount: 0,
+      city: prodData.city || null
     };
   },
 
-  async updateProductStatus(productId: string, status: 'active' | 'sold' | 'hidden'): Promise<void> {
+  async updateProductStatus(productId: string, status: 'active' | 'sold' | 'expired' | 'hidden'): Promise<void> {
     if (!supabase) return;
+    const payload: any = {
+      status,
+      updated_at: new Date().toISOString()
+    };
+    if (status === 'sold') {
+      payload.is_sold = true;
+    } else if (status === 'active') {
+      payload.is_sold = false;
+    }
     const { error } = await supabase
       .from('products')
-      .update({
-        status,
-        is_sold: status === 'sold',
-        updated_at: new Date().toISOString()
-      })
+      .update(payload)
       .eq('id', productId);
 
     if (error) throw error;
@@ -853,7 +974,7 @@ export const supabaseService = {
   },
 
   async updateProductRatingStats(productId: string): Promise<{ average: number; count: number }> {
-    if (!supabase) return { average: 5.0, count: 0 };
+    if (!supabase) return { average: 0, count: 0 };
     
     const { data, error } = await supabase
       .from('product_ratings')
@@ -867,7 +988,7 @@ export const supabaseService = {
     
     const count = data ? data.length : 0;
     const sum = data ? data.reduce((acc: number, curr: any) => acc + curr.rating, 0) : 0;
-    const average = count > 0 ? Number((sum / count).toFixed(1)) : 5.0;
+    const average = count > 0 ? Number((sum / count).toFixed(1)) : 0;
     
     const { error: updateError } = await supabase
       .from('products')
@@ -926,6 +1047,49 @@ export const supabaseService = {
       });
     } catch (err) {
       console.error('Failed to fetch product ratings from database:', err);
+      return [];
+    }
+  },
+
+  async getAllProductRatings(): Promise<Review[]> {
+    if (!supabase || !isSupabaseConfigured) return [];
+    try {
+      const { data, error } = await supabase
+        .from("product_ratings")
+        .select(`
+          id,
+          product_id,
+          reviewer_user_id,
+          rating,
+          comment,
+          created_at,
+          profiles:reviewer_user_id (
+            id,
+            full_name,
+            profile_image
+          )
+        `);
+
+      if (error) {
+        console.error('Error fetching all product ratings:', error.message);
+        return [];
+      }
+
+      return (data || []).map((r: any) => {
+        const profile = r.profiles;
+        return {
+          id: r.id,
+          productId: r.product_id,
+          reviewerId: r.reviewer_user_id,
+          reviewerName: profile?.full_name || 'عضو فيلوريا',
+          reviewerAvatar: profile?.profile_image || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&h=150&q=80',
+          rating: r.rating,
+          comment: r.comment || '',
+          createdAt: r.created_at || new Date().toISOString()
+        };
+      });
+    } catch (err) {
+      console.error('Failed to fetch all product ratings from database:', err);
       return [];
     }
   }

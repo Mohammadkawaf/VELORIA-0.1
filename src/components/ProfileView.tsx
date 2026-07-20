@@ -149,7 +149,7 @@ export default function ProfileView({
           const alertMsg = `⚠️ خطأ رفع الصورة الشخصية (avatars):\nCode: ${errObj.code}\nMessage: ${errObj.message}\nDetails: ${errObj.details}\nHint: ${errObj.hint}\nRaw: ${JSON.stringify(uploadErr, null, 2)}`;
           alert(alertMsg);
           setUploadError(`فشل رفع الصورة: ${uploadErr.message}`);
-          throw uploadErr;
+          return;
         }
 
         const { data: { publicUrl } } = supabase.storage
@@ -245,7 +245,7 @@ export default function ProfileView({
           const alertMsg = `⚠️ خطأ رفع صورة الغلاف (avatars):\nCode: ${errObj.code}\nMessage: ${errObj.message}\nDetails: ${errObj.details}\nHint: ${errObj.hint}\nRaw: ${JSON.stringify(uploadErr, null, 2)}`;
           alert(alertMsg);
           setUploadError(`فشل رفع الغلاف: ${uploadErr.message}`);
-          throw uploadErr;
+          return;
         }
 
         const { data: { publicUrl } } = supabase.storage
@@ -310,7 +310,8 @@ export default function ProfileView({
         const allReviewsLists = await Promise.all(reviewsPromises);
         setSellerReviews(allReviewsLists.flat());
       } catch (err) {
-        console.error('Error fetching seller reviews:', err);
+        console.warn('Error fetching seller reviews:', err);
+        setSellerReviews([]);
       } finally {
         setLoadingSellerReviews(false);
       }
@@ -730,8 +731,14 @@ export default function ProfileView({
           <div className="p-3 bg-gradient-to-br from-slate-50 to-slate-100/50 dark:from-slate-950/40 dark:to-slate-900 rounded-2xl border border-slate-100 dark:border-slate-850/60 text-center space-y-1">
             <span className="text-[10px] text-slate-400 block font-bold">متوسط تقييم السوق:</span>
             <span className="text-xs font-black text-slate-800 dark:text-white flex items-center justify-center gap-1">
-              {profileUser.ratingAverage} ⭐
-              <span className="text-[9px] text-slate-400 font-bold">({profileUser.ratingsCount})</span>
+              {profileUser.ratingAverage > 0 ? (
+                <>
+                  {profileUser.ratingAverage} ⭐
+                  <span className="text-[9px] text-slate-400 font-bold">({profileUser.ratingsCount})</span>
+                </>
+              ) : (
+                <span className="text-slate-400">لا يوجد تقييم بعد</span>
+              )}
             </span>
           </div>
 

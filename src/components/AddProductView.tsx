@@ -61,6 +61,20 @@ const uploadProductImage = async (file: File): Promise<string> => {
   });
 };
 
+const GOVERNORATES_CITIES: Record<string, string[]> = {
+  "دمشق": ["دمشق المدينة", "مشروع دمر", "المزة", "المالكي", "أبو رمانة", "البرامكة", "القصاع", "الميدان", "التجارة", "ركن الدين", "كفرسوسة", "المهاجرين", "شاغور"],
+  "ريف دمشق": ["جرمانا", "قدسيا", "ضاحية قدسيا", "التل", "الكسوة", "صحنايا", "أشرفية صحنايا", "ضاحية الأسد", "يبرود", "النبك", "قطنا", "الزبداني", "صيدنايا"],
+  "حلب": ["حلب المدينة", "منبج", "الباب", "عفرين", "نبل", "أعزاز", "الزهراء", "السفيرة", "الجميلية", "الشهباء", "الفرقان", "حلب الجديدة", "الموكامبو"],
+  "حمص": ["حمص المدينة", "الرستن", "تدمر", "القصير", "تلكلخ", "المشرفة", "الإنشاءات", "الوعر", "الحمراء", "الغوطة", "المحطة"],
+  "حماة": ["حماة المدينة", "سلمية", "مصياف", "السقيلبية", "محردة", "الغاب", "العاصي", "طريق حلب"],
+  "اللاذقية": ["اللاذقية المدينة", "جبلة", "القرداحة", "الحفة", "صلنفة", "الرمل الشمالي", "المشروع الأول", "الأوقاف", "الزراعة"],
+  "طرطوس": ["طرطوس المدينة", "بانياس", "صافيتا", "الدريكيش", "الشيخ بدر", "القدموس", "مشتى الحلو"],
+  "السويداء": ["السويداء المدينة", "شهبا", "صلخد", "القريا"],
+  "درعا": ["درعا المدينة", "طفس", "نوى", "بصرى الشام", "الصنمين", "ازرع", "داعل"],
+  "دير الزور": ["دير الزور المدينة", "الميادين", "البوكمال"],
+  "الحسكة": ["الحسكة المدينة", "القامشلي", "رأس العين", "عامودا", "المالكية", "الدرباسية"]
+};
+
 export default function AddProductView({
   categories,
   currentUser,
@@ -68,10 +82,10 @@ export default function AddProductView({
 }: AddProductViewProps) {
   console.log("categories prop =", categories);
   const [title, setTitle] = useState('');
-  const [price, setPrice] = useState<number | ''>('');
   const [categoryId, setCategoryId] = useState('');
   const [description, setDescription] = useState('');
-  const [city, setCity] = useState(currentUser?.city || 'دمشق');
+  const [price, setPrice] = useState<number | ''>('');
+  const [city, setCity] = useState(currentUser?.city || '');
   
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -148,7 +162,7 @@ export default function AddProductView({
       return;
     }
 
-    if (!title || !price || !categoryId || !description) {
+    if (!title || !categoryId || !description || !price || !city) {
       alert('الرجاء تعبئة كافة البيانات الرئيسية للإعلان.');
       return;
     }
@@ -171,8 +185,8 @@ export default function AddProductView({
           images: imageUrls,
           sellerId: currentUser?.id || '',
           status: 'active',
-          location: `${city}، سوريا`,
-          viewsCount: 1
+          viewsCount: 1,
+          city: city.trim()
         };
 
         await onAddProduct(productPayload);
@@ -185,6 +199,7 @@ export default function AddProductView({
         setPrice('');
         setCategoryId('');
         setDescription('');
+        setCity(currentUser?.city || '');
         setImageUrls([]);
       } catch (err: any) {
         console.error('Error in AddProductView publish:', err);
@@ -246,38 +261,29 @@ export default function AddProductView({
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-650 dark:text-slate-350 mb-1.5">السعر المطلوب (بالليرة السورية ل.س):</label>
+            <label className="block text-xs font-bold text-slate-650 dark:text-slate-350 mb-1.5">السعر (ل.س):</label>
             <input
               type="number"
               value={price}
               onChange={(e) => setPrice(e.target.value === '' ? '' : Number(e.target.value))}
-              placeholder="مثال: 50000"
+              placeholder="مثال: 150000"
               className="w-full text-xs px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:outline-hidden focus:border-amber-500 text-right"
               required
             />
           </div>
         </div>
 
-        {/* Location city */}
+        {/* City Input */}
         <div>
-          <label className="block text-xs font-bold text-slate-650 dark:text-slate-350 mb-1.5">المدينة والمنطقة:</label>
-          <select
+          <label className="block text-xs font-bold text-slate-650 dark:text-slate-350 mb-1.5">المدينة (الموقع الحالي للمنتج):</label>
+          <input
+            type="text"
             value={city}
             onChange={(e) => setCity(e.target.value)}
-            className="w-full text-xs pr-3 pl-8 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:outline-hidden focus:border-amber-500 cursor-pointer text-right"
-          >
-            <option value="دمشق">دمشق</option>
-            <option value="حلب">حلب</option>
-            <option value="حمص">حمص</option>
-            <option value="اللاذقية">اللاذقية</option>
-            <option value="طرطوس">طرطوس</option>
-            <option value="حماة">حماة</option>
-            <option value="السويداء">السويداء</option>
-            <option value="درعا">درعا</option>
-            <option value="دير الزور">دير الزور</option>
-            <option value="الحسكة">الحسكة</option>
-            <option value="القامشلي">القامشلي</option>
-          </select>
+            placeholder="مثال: دمشق، حلب، حمص..."
+            className="w-full text-xs px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:outline-hidden focus:border-amber-500 text-right"
+            required
+          />
         </div>
 
         {/* Description */}

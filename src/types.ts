@@ -52,7 +52,8 @@ export interface Product {
   images: string[];
   sellerId: string;
   status: 'active' | 'hidden' | 'sold' | 'expired';
-  location: string;
+  isSold?: boolean;
+  city?: string | null;
   createdAt: string;
   rating: number;
   reviewsCount: number;
@@ -209,4 +210,24 @@ export interface AppSettings {
   socialTiktok: string;
   socialX: string;
 }
+
+export interface ProductFilterOptions {
+  status?: string;
+  categoryId?: string | number | null;
+  searchTerm?: string | null;
+  sortBy?: string;
+  productIds?: string[];
+  
+  // Future extendable filters
+  priceMin?: number | null;
+  priceMax?: number | null;
+  city?: string | null;
+  isVerified?: boolean | null;
+  isFeatured?: boolean | null;
+  hasOffer?: boolean | null;
+  condition?: string | null;
+  delivery?: boolean | null;
+  currency?: string | null;
+}
+
 

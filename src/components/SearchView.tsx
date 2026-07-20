@@ -39,12 +39,12 @@ export default function SearchView({
   // Distinct cities from mock products and users
   const availableCities = useMemo(() => {
     const cities = new Set<string>();
-    // Add known major Saudi cities
-    cities.add('الرياض');
-    cities.add('جدة');
-    cities.add('الدمام');
+    // Add known major Syrian cities
+    cities.add('دمشق');
+    cities.add('حلب');
+    cities.add('حمص');
     products.forEach((p) => {
-      const city = p.location.split('،')[0]?.trim();
+      const city = p.city?.trim();
       if (city) cities.add(city);
     });
     return Array.from(cities);
@@ -184,7 +184,7 @@ export default function SearchView({
 
     // 5. City Filter
     if (selectedCity !== 'all') {
-      result = result.filter((p) => p.location.toLowerCase().includes(selectedCity.toLowerCase()));
+      result = result.filter((p) => (p.city || '').toLowerCase().includes(selectedCity.toLowerCase()));
     }
 
     // 6. Rating Filter

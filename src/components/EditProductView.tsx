@@ -61,6 +61,20 @@ const uploadProductImage = async (file: File): Promise<string> => {
   });
 };
 
+const GOVERNORATES_CITIES: Record<string, string[]> = {
+  "دمشق": ["دمشق المدينة", "مشروع دمر", "المزة", "المالكي", "أبو رمانة", "البرامكة", "القصاع", "الميدان", "التجارة", "ركن الدين", "كفرسوسة", "المهاجرين", "شاغور"],
+  "ريف دمشق": ["جرمانا", "قدسيا", "ضاحية قدسيا", "التل", "الكسوة", "صحنايا", "أشرفية صحنايا", "ضاحية الأسد", "يبرود", "النبك", "قطنا", "الزبداني", "صيدنايا"],
+  "حلب": ["حلب المدينة", "منبج", "الباب", "عفرين", "نبل", "أعزاز", "الزهراء", "السفيرة", "الجميلية", "الشهباء", "الفرقان", "حلب الجديدة", "الموكامبو"],
+  "حمص": ["حمص المدينة", "الرستن", "تدمر", "القصير", "تلكلخ", "المشرفة", "الإنشاءات", "الوعر", "الحمراء", "الغوطة", "المحطة"],
+  "حماة": ["حماة المدينة", "سلمية", "مصياف", "السقيلبية", "محردة", "الغاب", "العاصي", "طريق حلب"],
+  "اللاذقية": ["اللاذقية المدينة", "جبلة", "القرداحة", "الحفة", "صلنفة", "الرمل الشمالي", "المشروع الأول", "الأوقاف", "الزراعة"],
+  "طرطوس": ["طرطوس المدينة", "بانياس", "صافيتا", "الدريكيش", "الشيخ بدر", "القدموس", "مشتى الحلو"],
+  "السويداء": ["السويداء المدينة", "شهبا", "صلخد", "القريا"],
+  "درعا": ["درعا المدينة", "طفس", "نوى", "بصرى الشام", "الصنمين", "ازرع", "داعل"],
+  "دير الزور": ["دير الزور المدينة", "الميادين", "البوكمال"],
+  "الحسكة": ["الحسكة المدينة", "القامشلي", "رأس العين", "عامودا", "المالكية", "الدرباسية"]
+};
+
 export default function EditProductView({
   product,
   categories,
@@ -69,13 +83,10 @@ export default function EditProductView({
   onDelete
 }: EditProductViewProps) {
   const [title, setTitle] = useState(product.title);
-  const [price, setPrice] = useState<number | ''>(product.price);
   const [categoryId, setCategoryId] = useState(product.categoryId);
   const [description, setDescription] = useState(product.description);
-  
-  // Extract city from location "دمشق، سوريا" -> "دمشق"
-  const initialCity = product.location.split('،')[0] || 'دمشق';
-  const [city, setCity] = useState(initialCity);
+  const [price, setPrice] = useState<number | ''>(product.price);
+  const [city, setCity] = useState(product.city || '');
   
   const [imageUrls, setImageUrls] = useState<string[]>(product.images);
   const [status, setStatus] = useState<Product['status']>(product.status);
@@ -189,7 +200,7 @@ export default function EditProductView({
 
   const handleUpdate = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title || !price || !categoryId || !description) {
+    if (!title || !categoryId || !description || !price || !city) {
       alert('الرجاء تعبئة كافة البيانات الرئيسية للإعلان.');
       return;
     }
@@ -206,10 +217,11 @@ export default function EditProductView({
       title: title.trim(),
       description: description.trim(),
       price: Number(price),
+      currency: 'ل.س',
       categoryId: categoryId,
       images: imageUrls,
       status: status,
-      location: `${city}، سوريا`
+      city: city.trim()
     };
 
     // Simulate small saving latency
@@ -290,6 +302,7 @@ export default function EditProductView({
           />
         </div>
 
+        {/* Category & Sale Type */}
         {/* Category & Price */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
@@ -308,38 +321,29 @@ export default function EditProductView({
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-650 dark:text-slate-350 mb-1.5">السعر المطلوب (بالليرة السورية ل.س):</label>
+            <label className="block text-xs font-bold text-slate-650 dark:text-slate-350 mb-1.5">السعر (ل.س):</label>
             <input
               type="number"
               value={price}
               onChange={(e) => setPrice(e.target.value === '' ? '' : Number(e.target.value))}
-              placeholder="مثال: 50000"
+              placeholder="مثال: 150000"
               className="w-full text-xs px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:outline-hidden focus:border-amber-500 text-right"
               required
             />
           </div>
         </div>
 
-        {/* Location city */}
+        {/* City Input */}
         <div>
-          <label className="block text-xs font-bold text-slate-650 dark:text-slate-350 mb-1.5">المدينة والمنطقة:</label>
-          <select
+          <label className="block text-xs font-bold text-slate-650 dark:text-slate-350 mb-1.5">المدينة (الموقع الحالي للمنتج):</label>
+          <input
+            type="text"
             value={city}
             onChange={(e) => setCity(e.target.value)}
-            className="w-full text-xs pr-3 pl-8 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:outline-hidden focus:border-amber-500 cursor-pointer text-right"
-          >
-            <option value="دمشق">دمشق</option>
-            <option value="حلب">حلب</option>
-            <option value="حمص">حمص</option>
-            <option value="اللاذقية">اللاذقية</option>
-            <option value="طرطوس">طرطوس</option>
-            <option value="حماة">حماة</option>
-            <option value="السويداء">السويداء</option>
-            <option value="درعا">درعا</option>
-            <option value="دير الزور">دير الزور</option>
-            <option value="الحسكة">الحسكة</option>
-            <option value="القامشلي">القامشلي</option>
-          </select>
+            placeholder="مثال: دمشق، حلب، حمص..."
+            className="w-full text-xs px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:outline-hidden focus:border-amber-500 text-right"
+            required
+          />
         </div>
 
         {/* Description */}

@@ -103,7 +103,7 @@ export default function RegisterView({ onRegister, onNavigateToLogin, onViewLega
         badges: [],
         isPremium: false,
         followersCount: 0,
-        ratingAverage: 5.0,
+        ratingAverage: 0,
         ratingsCount: 0,
         role: 'user',
         joinedAt: new Date().toISOString().split('T')[0],

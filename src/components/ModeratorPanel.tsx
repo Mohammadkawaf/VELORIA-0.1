@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Report, Product, User, UserBadge, VerificationRequest } from '../types';
+import AdminPromptModal from './AdminPromptModal';
 import {
   Shield,
   EyeOff,
@@ -66,6 +67,15 @@ export default function ModeratorPanel({
   const [warnTargetUser, setWarnTargetUser] = useState('');
   const [warnMessage, setWarnMessage] = useState('');
   const [warnSuccess, setWarnSuccess] = useState(false);
+
+  // Rejection modal state
+  const [rejectModal, setRejectModal] = useState<{
+    isOpen: boolean;
+    requestId: string;
+  }>({
+    isOpen: false,
+    requestId: ''
+  });
 
   const pendingReports = reports.filter((r) => r.status === 'pending');
   const pastReports = reports.filter((r) => r.status !== 'pending');
@@ -338,6 +348,8 @@ export default function ModeratorPanel({
                           {rep.type === 'product' && targetProduct && targetProduct.status !== 'hidden' && (
                             <button
                               onClick={() => {
+                                console.log("Hide button clicked");
+                                console.log("calling handleUpdateProductStatus");
                                 onUpdateProductStatus(targetProduct.id, 'hidden');
                                 onResolveReport(rep.id, 'resolved');
                               }}
@@ -412,15 +424,25 @@ export default function ModeratorPanel({
                         <td className="p-3 font-mono">{p.price} ل.س</td>
                         <td className="p-3">
                           <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
-                            p.status === 'active' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
+                            p.status === 'hidden'
+                              ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/30 dark:text-rose-400'
+                              : p.status === 'active'
+                              ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400'
+                              : p.status === 'sold'
+                              ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400'
+                              : 'bg-slate-50 text-slate-600 dark:bg-slate-900 dark:text-slate-400'
                           }`}>
-                            {p.status === 'active' ? 'نشط' : p.status === 'sold' ? 'مباع' : 'مخفي بمخالفة'}
+                            {p.status === 'hidden' ? 'مخفي بمخالفة' : p.status === 'active' ? 'نشط' : p.status === 'sold' ? 'مباع' : 'منتهي الصلاحية'}
                           </span>
                         </td>
                         <td className="p-3">
                           {p.status !== 'hidden' ? (
                             <button
-                              onClick={() => onUpdateProductStatus(p.id, 'hidden')}
+                              onClick={() => {
+                                console.log("Hide button clicked");
+                                console.log("calling handleUpdateProductStatus");
+                                onUpdateProductStatus(p.id, 'hidden');
+                              }}
                               className="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 text-[10px] font-bold rounded-lg cursor-pointer"
                               title="إخفاء المنتج المخالف فوراً"
                             >
@@ -527,15 +549,10 @@ export default function ModeratorPanel({
                           
                           <button
                             onClick={() => {
-                              const reason = prompt('الرجاء كتابة سبب رفض التوثيق بالتفصيل لإرساله للتاجر:');
-                              if (reason === null) return;
-                              if (!reason.trim()) {
-                                alert('سبب الرفض حقل إجباري لتنبيه التاجر.');
-                                return;
-                              }
-                              if (onUpdateVerificationStatus) {
-                                onUpdateVerificationStatus(req.id, 'rejected', reason.trim());
-                              }
+                              setRejectModal({
+                                isOpen: true,
+                                requestId: req.id
+                              });
                             }}
                             className="px-3.5 py-1.5 bg-rose-500 hover:bg-rose-600 text-white text-[11px] font-black rounded-xl cursor-pointer transition-colors"
                           >
@@ -604,6 +621,23 @@ export default function ModeratorPanel({
 
         </div>
       </div>
+
+      {/* Reject Verification Request Modal */}
+      <AdminPromptModal
+        isOpen={rejectModal.isOpen}
+        title="رفض طلب التوثيق"
+        description="يرجى كتابة سبب رفض طلب التوثيق بالتفصيل لإرساله للتاجر:"
+        placeholder="مثال: المستندات غير واضحة، الاسم لا يطابق الأوراق الثبوتية..."
+        cancelLabel="إلغاء"
+        confirmLabel="تأكيد الرفض"
+        isRequired={true}
+        onClose={() => setRejectModal(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={(reason) => {
+          if (onUpdateVerificationStatus) {
+            onUpdateVerificationStatus(rejectModal.requestId, 'rejected', reason);
+          }
+        }}
+      />
     </div>
   );
 }

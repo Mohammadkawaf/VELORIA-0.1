@@ -34,7 +34,7 @@ export default function ShopsView({
   const suggestedSellers = [...sellers].sort((a, b) => b.ratingAverage - a.ratingAverage);
 
   const getProductsCount = (sellerId: string) => {
-    return products.filter((p) => p.sellerId === sellerId && p.status === 'active').length;
+    return products.filter((p) => p.sellerId === sellerId && (p.status === 'active' || p.status === 'sold')).length;
   };
 
   const renderSellerCard = (seller: User) => {
@@ -123,8 +123,12 @@ export default function ShopsView({
           {/* Stats Grid */}
           <div className="grid grid-cols-3 gap-1 bg-slate-50 dark:bg-slate-950/30 p-2 rounded-xl mt-3 text-center text-[9px] border border-slate-100 dark:border-slate-850/60">
             <div>
-              <span className="font-extrabold text-slate-850 dark:text-white block">{seller.ratingAverage} ⭐</span>
-              <span className="text-slate-400">({seller.ratingsCount} تقييم)</span>
+              <span className="font-extrabold text-slate-850 dark:text-white block">
+                {seller.ratingAverage > 0 ? `${seller.ratingAverage} ⭐` : 'لا يوجد'}
+              </span>
+              <span className="text-slate-400">
+                {seller.ratingAverage > 0 ? `(${seller.ratingsCount} تقييم)` : 'تقييم بعد'}
+              </span>
             </div>
             <div>
               <span className="font-extrabold text-slate-850 dark:text-white block">{prodCount}</span>

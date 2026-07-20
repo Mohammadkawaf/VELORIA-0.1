@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { User, Category, Product, Report, UserBadge, Order, UserRole, Contribution, VerificationRequest, ContactMessage, AppSettings, Review, Message, Notification } from '../types';
 import AdminSettingsView from './AdminSettingsView';
+import HideProductModal from './HideProductModal';
+import { supabase, supabaseService, isSupabaseConfigured } from '../lib/supabase';
 import {
   Shield,
   Users,
@@ -71,6 +73,8 @@ interface AdminPanelProps {
   setNotifications?: React.Dispatch<React.SetStateAction<Notification[]>>;
   setContributions?: React.Dispatch<React.SetStateAction<Contribution[]>>;
   setVerificationRequests?: React.Dispatch<React.SetStateAction<VerificationRequest[]>>;
+  onSelectProduct?: (product: Product) => void;
+  onSelectSeller?: (seller: User) => void;
 }
 
 // Activity Log entry structure
@@ -114,8 +118,24 @@ export default function AdminPanel({
   notifications = [],
   setNotifications,
   setContributions,
-  setVerificationRequests
+  setVerificationRequests,
+  onSelectProduct,
+  onSelectSeller
 }: AdminPanelProps) {
+  // Lightbox State for quick image preview
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+
+  // Hide product modal state
+  const [hideProductModal, setHideProductModal] = useState<{
+    isOpen: boolean;
+    productId: string;
+    action: 'active' | 'hidden' | 'sold';
+  }>({
+    isOpen: false,
+    productId: '',
+    action: 'hidden'
+  });
+
   // 1. Secure Admin Login Gate state
   const [isGateAuthenticated, setIsGateAuthenticated] = useState<boolean>(() => {
     return sessionStorage.getItem('veloria-admin-gate-auth') === 'true';
@@ -131,6 +151,14 @@ export default function AdminPanel({
   // Search & Filter States
   const [userSearch, setUserSearch] = useState('');
   const [userFilter, setUserFilter] = useState<'all' | 'active' | 'suspended' | 'banned' | 'verified' | 'deactivated'>('all');
+  const [userRoleFilter, setUserRoleFilter] = useState<'all' | 'visitor' | 'user' | 'moderator' | 'admin'>('all');
+  const [changingRoleUser, setChangingRoleUser] = useState<User | null>(null);
+  const [selectedNewRole, setSelectedNewRole] = useState<UserRole>('visitor');
+  const [roleChangeConfirm, setRoleChangeConfirm] = useState<boolean>(false);
+  const [roleError, setRoleError] = useState<string | null>(null);
+  const [deletingUserObj, setDeletingUserObj] = useState<User | null>(null);
+  const [deleteConfirmStep, setDeleteConfirmStep] = useState<number>(0);
+  const [viewingUserObj, setViewingUserObj] = useState<User | null>(null);
   
   const [productSearch, setProductSearch] = useState('');
   const [productFilter, setProductFilter] = useState<'all' | 'active' | 'sold' | 'hidden'>('all');
@@ -145,6 +173,13 @@ export default function AdminPanel({
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [deletingProductObj, setDeletingProductObj] = useState<Product | null>(null);
+  const [deletionReasonInput, setDeletionReasonInput] = useState<string>('');
+
+  // Local state for statistics retrieved directly from Supabase (to avoid client-side filtered data issues)
+  const [dbProductsForStats, setDbProductsForStats] = useState<Product[]>([]);
+  const [dbUsersForStats, setDbUsersForStats] = useState<User[]>([]);
+  const [loadingStats, setLoadingStats] = useState<boolean>(false);
 
   // Forms
   const [newCatName, setNewCatName] = useState('');
@@ -188,6 +223,30 @@ export default function AdminPanel({
   useEffect(() => {
     localStorage.setItem('veloria-admin-logs', JSON.stringify(activityLogs));
   }, [activityLogs]);
+
+  useEffect(() => {
+    if (!isGateAuthenticated) return;
+
+    const loadRealDbStats = async () => {
+      if (!isSupabaseConfigured || !supabase) return;
+      setLoadingStats(true);
+      try {
+        // Fetch all products unfiltered to get exact stats (active, sold, hidden)
+        const allProducts = await supabaseService.getProducts();
+        setDbProductsForStats(allProducts);
+
+        // Fetch all profiles to get exact users and verification status counts
+        const allProfiles = await supabaseService.getProfiles();
+        setDbUsersForStats(allProfiles);
+      } catch (err) {
+        console.warn('Failed to load real DB stats in AdminPanel:', err);
+      } finally {
+        setLoadingStats(false);
+      }
+    };
+
+    loadRealDbStats();
+  }, [isGateAuthenticated, products, users]);
 
   const addLog = (operation: string) => {
     const newLog: ActivityLog = {
@@ -264,52 +323,110 @@ export default function AdminPanel({
   };
 
   // Auth Action for Login Gate
-  const handleGateLogin = (e: React.FormEvent) => {
+  const handleGateLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanEmail = loginEmail.trim().toLowerCase();
     
-    // Find the current logged-in user or matching user in the system
-    const userMatch = users.find(u => u.email.toLowerCase() === cleanEmail);
-    
-    if (!userMatch) {
-      setLoginError('لم يتم العثور على حساب بهذا البريد الإلكتروني.');
-      return;
-    }
-
-    if (userMatch.role !== 'admin' && userMatch.role !== 'moderator') {
-      setLoginError('عذراً! هذه البوابة مخصصة للإدارة والمشرفين فقط.');
-      return;
-    }
-
-    // Verify correct passwords
-    if (userMatch.role === 'admin' && loginPassword !== 'admin') {
-      setLoginError('كلمة مرور الإدارة غير صحيحة. (كلمة المرور الافتراضية للتجربة هي: admin)');
-      return;
-    }
-
-    if (userMatch.role === 'moderator' && loginPassword !== 'moderator') {
-      setLoginError('كلمة مرور المشرف غير صحيحة. (كلمة المرور الافتراضية للتجربة هي: moderator)');
-      return;
-    }
-
-    // Success Authentication
-    setIsGateAuthenticated(true);
-    sessionStorage.setItem('veloria-admin-gate-auth', 'true');
     setLoginError('');
-    
-    const roleText = userMatch.role === 'admin' ? 'مدير نظام' : 'مشرف نظام';
-    const logMsg = `قام بالدخول الآمن بنجاح إلى لوحة الإدارة بصفته ${roleText}`;
-    
-    // Append entry to logs
-    const newLog: ActivityLog = {
-      id: `log-${Date.now()}`,
-      adminName: userMatch.name,
-      role: roleText,
-      operation: logMsg,
-      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
-      ipAddress: '192.168.1.100'
-    };
-    setActivityLogs(prev => [newLog, ...prev]);
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        // 1. Use supabase.auth.signInWithPassword to verify email and password
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password: loginPassword,
+        });
+
+        if (authError) {
+          setLoginError(authError.message || 'فشل تسجيل الدخول. يرجى التحقق من البيانات.');
+          return;
+        }
+
+        const authUser = authData?.user;
+        if (!authUser) {
+          setLoginError('لم يتم العثور على المستخدم في نظام المصادقة.');
+          return;
+        }
+
+        // 2. Search within the profiles table using id only
+        const profile = await supabaseService.getProfile(authUser.id, authUser.email, authUser.user_metadata);
+        if (!profile) {
+          setLoginError('لم يتم العثور على الملف الشخصي لهذا الحساب.');
+          return;
+        }
+
+        // 3. Verify that role = 'admin' or role = 'moderator'
+        if (profile.role !== 'admin' && profile.role !== 'moderator') {
+          setLoginError('عذراً! هذه البوابة مخصصة للإدارة والمشرفين فقط.');
+          return;
+        }
+
+        // 4. Success Authentication
+        setIsGateAuthenticated(true);
+        sessionStorage.setItem('veloria-admin-gate-auth', 'true');
+        setLoginError('');
+        
+        const roleText = profile.role === 'admin' ? 'مدير نظام' : 'مشرف نظام';
+        const logMsg = `قام بالدخول الآمن بنجاح إلى لوحة الإدارة بصفته ${roleText}`;
+        
+        // Append entry to logs
+        const newLog: ActivityLog = {
+          id: `log-${Date.now()}`,
+          adminName: profile.name,
+          role: roleText,
+          operation: logMsg,
+          timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
+          ipAddress: '192.168.1.100'
+        };
+        setActivityLogs(prev => [newLog, ...prev]);
+      } catch (err: any) {
+        console.warn('Admin Gate Login error:', err);
+        setLoginError(err?.message || 'حدث خطأ أثناء الاتصال بقاعدة البيانات.');
+      }
+    } else {
+      // Fallback for mock/local environment when Supabase is not configured
+      const userMatch = users.find(u => u.email.toLowerCase() === cleanEmail);
+      
+      if (!userMatch) {
+        setLoginError('لم يتم العثور على حساب بهذا البريد الإلكتروني.');
+        return;
+      }
+
+      if (userMatch.role !== 'admin' && userMatch.role !== 'moderator') {
+        setLoginError('عذراً! هذه البوابة مخصصة للإدارة والمشرفين فقط.');
+        return;
+      }
+
+      // Verify correct passwords
+      if (userMatch.role === 'admin' && loginPassword !== 'admin') {
+        setLoginError('كلمة مرور الإدارة غير صحيحة. (كلمة المرور الافتراضية للتجربة هي: admin)');
+        return;
+      }
+
+      if (userMatch.role === 'moderator' && loginPassword !== 'moderator') {
+        setLoginError('كلمة مرور المشرف غير صحيحة. (كلمة المرور الافتراضية للتجربة هي: moderator)');
+        return;
+      }
+
+      // Success Authentication
+      setIsGateAuthenticated(true);
+      sessionStorage.setItem('veloria-admin-gate-auth', 'true');
+      setLoginError('');
+      
+      const roleText = userMatch.role === 'admin' ? 'مدير نظام' : 'مشرف نظام';
+      const logMsg = `قام بالدخول الآمن بنجاح إلى لوحة الإدارة بصفته ${roleText}`;
+      
+      // Append entry to logs
+      const newLog: ActivityLog = {
+        id: `log-${Date.now()}`,
+        adminName: userMatch.name,
+        role: roleText,
+        operation: logMsg,
+        timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
+        ipAddress: '192.168.1.100'
+      };
+      setActivityLogs(prev => [newLog, ...prev]);
+    }
   };
 
   // Direct Bypass for developer ease
@@ -340,13 +457,16 @@ export default function AdminPanel({
   };
 
   // Stat calculations
-  const totalUsers = users.length;
-  const totalProducts = products.length;
-  const activeProducts = products.filter(p => p.status === 'active').length;
-  const soldProducts = products.filter(p => p.status === 'sold').length;
-  const hiddenProducts = products.filter(p => p.status === 'hidden').length;
+  const productsToUse = dbProductsForStats.length > 0 ? dbProductsForStats : products;
+  const usersToUse = dbUsersForStats.length > 0 ? dbUsersForStats : users;
+
+  const totalUsers = usersToUse.length;
+  const totalProducts = productsToUse.length;
+  const activeProducts = productsToUse.filter(p => p.status === 'active').length;
+  const soldProducts = productsToUse.filter(p => p.status === 'sold').length;
+  const hiddenProducts = productsToUse.filter(p => p.status === 'hidden').length;
   const pendingReportsCount = reports.filter(r => r.status === 'pending').length;
-  const verifiedStoresCount = users.filter(u => u.badges.includes('verified')).length;
+  const verifiedStoresCount = usersToUse.filter(u => u.badges.includes('verified')).length;
 
   // Users Handlers
   const handleUserStatusUpdate = (userId: string, newStatus: 'active' | 'suspended' | 'banned') => {
@@ -397,22 +517,205 @@ export default function AdminPanel({
   };
 
   // Products Handlers
-  const handleProductStatusToggle = (productId: string, newStatus: 'active' | 'hidden' | 'sold') => {
-    const targetProduct = products.find(p => p.id === productId);
-    if (setProducts) {
-      setProducts(prev => prev.map(p => p.id === productId ? { ...p, status: newStatus } : p));
+  const executeProductStatusToggle = async (productId: string, action: 'active' | 'hidden' | 'sold', reason: string = '') => {
+    console.log("executeProductStatusToggle started", productId);
+    const targetProduct = productsToUse.find(p => p.id === productId);
+    if (!targetProduct) {
+      return;
     }
-    const statusAr = newStatus === 'active' ? 'إعادة إظهار وتنشيط' : newStatus === 'hidden' ? 'إخفاء ورقابة' : 'مباع';
-    addLog(`قام بـ ${statusAr} المنتج: [${targetProduct?.title}] للبائع: ${targetProduct?.sellerId}`);
+
+    let targetStatus: 'active' | 'hidden' | 'sold' | 'expired' = action;
+
+    if (action === 'active') {
+      if (targetProduct.status === 'hidden') {
+        targetStatus = targetProduct.isSold ? 'sold' : 'active';
+      } else {
+        targetStatus = 'active';
+      }
+    }
+
+    if (targetStatus === 'hidden') {
+      console.log('Hide button clicked');
+      console.log('calling handleUpdateProductStatus');
+
+      const updates: any = {
+        status: 'hidden',
+        updated_at: new Date().toISOString()
+      };
+
+      try {
+        console.log('Updating database...');
+        if (isSupabaseConfigured && supabase) {
+          const { error } = await supabase
+            .from('products')
+            .update(updates)
+            .eq('id', productId);
+          if (error) {
+            throw error;
+          }
+        }
+        console.log('Database updated successfully');
+
+        // Send notifications on success
+        if (targetProduct.status !== 'hidden') {
+          const bodyText = reason 
+            ? `قام فريق الإدارة بإخفاء منتجك مؤقتاً بسبب مخالفة سياسات المنصة.\nالسبب: ${reason}`
+            : `قام فريق الإدارة بإخفاء منتجك مؤقتاً بسبب مخالفة سياسات المنصة.`;
+          
+          const newNotif: Notification = {
+            id: `notif-hide-${Date.now()}-${Math.random()}`,
+            userId: targetProduct.sellerId,
+            type: 'admin',
+            title: 'تم إخفاء أحد منتجاتك',
+            body: bodyText,
+            createdAt: new Date().toISOString(),
+            read: false
+          };
+
+          if (setNotifications) {
+            setNotifications((prev) => [newNotif, ...prev]);
+          } else {
+            try {
+              const notifsStr = localStorage.getItem('veloria-notifications');
+              const currentNotifs = notifsStr ? JSON.parse(notifsStr) : [];
+              localStorage.setItem('veloria-notifications', JSON.stringify([newNotif, ...currentNotifs]));
+              window.dispatchEvent(new Event('storage'));
+            } catch (e) {
+              console.warn('Failed to update notifications in localStorage:', e);
+            }
+          }
+        }
+        console.log('Notification sent');
+
+        // Update local state
+        const updatedIsSold = targetProduct.isSold;
+        if (setProducts) {
+          setProducts(prev => prev.map(p => p.id === productId ? { ...p, status: 'hidden', isSold: updatedIsSold } : p));
+        }
+        
+        setDbProductsForStats(prev => prev.map(p => p.id === productId ? { ...p, status: 'hidden', isSold: updatedIsSold } : p));
+        console.log('Local state updated');
+        console.log('Hide العملية انتهت');
+
+        const statusAr = 'إخفاء ورقابة';
+        addLog(`قام بـ ${statusAr} المنتج: [${targetProduct?.title}] للبائع: ${targetProduct?.sellerId}`);
+
+      } catch (err: any) {
+        console.error('Failed to hide product:', err);
+      }
+    } else {
+      console.log("inside else (targetStatus is not hidden)");
+      const updates: any = {
+        status: targetStatus,
+        updated_at: new Date().toISOString()
+      };
+
+      if (targetStatus === 'sold') {
+        updates.is_sold = true;
+      } else {
+        if (targetStatus === 'active') {
+          updates.is_sold = false;
+        }
+      }
+
+      try {
+        if (isSupabaseConfigured && supabase) {
+          const { error } = await supabase
+            .from('products')
+            .update(updates)
+            .eq('id', productId);
+          if (error) {
+            throw error;
+          }
+        }
+
+        // Send notifications on success
+        if (targetProduct.status === 'hidden') {
+          const newNotif: Notification = {
+            id: `notif-unhide-${Date.now()}-${Math.random()}`,
+            userId: targetProduct.sellerId,
+            type: 'admin',
+            title: 'تمت إعادة نشر منتجك',
+            body: 'بعد مراجعة المنتج تمت إعادة نشره داخل السوق.',
+            createdAt: new Date().toISOString(),
+            read: false
+          };
+
+          if (setNotifications) {
+            setNotifications((prev) => [newNotif, ...prev]);
+          } else {
+            try {
+              const notifsStr = localStorage.getItem('veloria-notifications');
+              const currentNotifs = notifsStr ? JSON.parse(notifsStr) : [];
+              localStorage.setItem('veloria-notifications', JSON.stringify([newNotif, ...currentNotifs]));
+              window.dispatchEvent(new Event('storage'));
+            } catch (e) {
+              console.warn('Failed to update notifications in localStorage:', e);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to update product in Supabase:', err);
+        return; // Stop if it failed
+      }
+
+      console.log("Step 5: Updating local states for non-hidden product");
+      const updatedIsSold = targetStatus === 'sold' ? true : (targetStatus === 'active' ? false : targetProduct.isSold);
+
+      if (setProducts) {
+        setProducts(prev => prev.map(p => p.id === productId ? { ...p, status: targetStatus, isSold: updatedIsSold } : p));
+      }
+
+      setDbProductsForStats(prev => prev.map(p => p.id === productId ? { ...p, status: targetStatus, isSold: updatedIsSold } : p));
+
+      const statusAr = action === 'active' ? 'إلغاء الإخفاء' : 'مباع';
+      addLog(`قام بـ ${statusAr} المنتج: [${targetProduct?.title}] للبائع: ${targetProduct?.sellerId}`);
+    }
   };
 
-  const handleEditProductSubmit = (e: React.FormEvent) => {
+  const handleProductStatusToggle = async (productId: string, action: 'active' | 'hidden' | 'sold') => {
+    console.log("handleProductStatusToggle started", productId);
+    const targetProduct = productsToUse.find(p => p.id === productId);
+    if (!targetProduct) return;
+
+    if (action === 'hidden' && targetProduct.status !== 'hidden') {
+      setHideProductModal({
+        isOpen: true,
+        productId,
+        action
+      });
+      return;
+    }
+
+    await executeProductStatusToggle(productId, action, '');
+  };
+
+  const handleEditProductSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingProduct) return;
+
+    try {
+      if (isSupabaseConfigured && supabase) {
+        const { error } = await supabase
+          .from('products')
+          .update({
+            title: editingProduct.title,
+            price: editingProduct.price,
+            description: editingProduct.description,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', editingProduct.id);
+        if (error) throw error;
+      }
+    } catch (err) {
+      console.warn('Failed to update edited product in Supabase:', err);
+    }
 
     if (setProducts) {
       setProducts(prev => prev.map(p => p.id === editingProduct.id ? editingProduct : p));
     }
+    setDbProductsForStats(prev => prev.map(p => p.id === editingProduct.id ? editingProduct : p));
+
     addLog(`تعديل تفاصيل وأسعار المنتج الإعلاني: ${editingProduct.title}`);
     setEditingProduct(null);
   };
@@ -423,20 +726,23 @@ export default function AdminPanel({
       return;
     }
 
-    const targetProduct = products.find(p => p.id === productId);
+    const targetProduct = productsToUse.find(p => p.id === productId);
     if (!targetProduct) return;
 
-    // First confirmation dialog
-    const confirmDelete = confirm(`هل أنت متأكد من حذف هذا المنتج؟\n\nتنبيه: هذا الإجراء نهائي ولا يمكن التراجع عنه.`);
-    if (!confirmDelete) return;
+    setDeletingProductObj(targetProduct);
+    setDeletionReasonInput('');
+  };
 
-    // Prompt for deletion reason
-    const reason = prompt('يرجى كتابة سبب حذف المنتج لإخطار التاجر به (مطلوب):');
-    if (reason === null) return; // user cancelled
-    if (reason.trim() === '') {
+  const handleConfirmDeleteProduct = async () => {
+    if (!deletingProductObj) return;
+    if (deletionReasonInput.trim() === '') {
       alert('لا يمكن حذف المنتج دون توفير سبب للحذف.');
       return;
     }
+
+    const targetProduct = deletingProductObj;
+    const productId = targetProduct.id;
+    const reason = deletionReasonInput.trim();
 
     // --- Supabase Storage & Table Cleanup ---
     try {
@@ -470,6 +776,7 @@ export default function AdminPanel({
     if (setProducts) {
       setProducts(prev => prev.filter(p => p.id !== productId));
     }
+    setDbProductsForStats(prev => prev.filter(p => p.id !== productId));
 
     // Clear reports related to the product
     if (setReports) {
@@ -490,38 +797,38 @@ export default function AdminPanel({
     }
 
     // Notify merchant & add to notifications
-    try {
-      const notifsStr = localStorage.getItem('veloria-notifications');
-      const currentNotifs = notifsStr ? JSON.parse(notifsStr) : [];
-      const newNotif = {
-        id: `notif-${Date.now()}-${Math.random()}`,
-        userId: targetProduct.sellerId,
-        type: 'admin',
-        title: `❌ تم حذف منتجك: "${targetProduct.title}"`,
-        body: `نحيطك علماً بأن إدارة المنصة قامت بحذف منتجك المخالف لسبب رقابي: "${reason}". يرجى الالتزام بالسياسات والقوانين لتفادي حظر حسابك.`,
-        createdAt: new Date().toISOString(),
-        read: false
-      };
-      
-      // Clean up previous notifications about this product, then insert new one
-      const filteredNotifs = currentNotifs.filter((n: any) => 
-        !(n.title?.includes(targetProduct.title) || n.body?.includes(targetProduct.title) || n.id?.includes(productId))
-      );
-      
-      const mergedNotifs = [newNotif, ...filteredNotifs].sort((a: any, b: any) => {
-        const dateA = new Date(a.createdAt || a.created_at || 0).getTime();
-        const dateB = new Date(b.createdAt || b.created_at || 0).getTime();
-        return dateB - dateA;
-      });
-      localStorage.setItem('veloria-notifications', JSON.stringify(mergedNotifs));
-      window.dispatchEvent(new Event('storage'));
-    } catch (e) {
-      console.warn('Failed to update notifications in localStorage:', e);
+    const bodyText = reason 
+      ? `تم حذف المنتج من المنصة.\nالسبب: ${reason}`
+      : `تم حذف المنتج من المنصة.`;
+
+    const newNotif: Notification = {
+      id: `notif-delete-${Date.now()}-${Math.random()}`,
+      userId: targetProduct.sellerId,
+      type: 'admin',
+      title: 'تم حذف أحد منتجاتك',
+      body: bodyText,
+      createdAt: new Date().toISOString(),
+      read: false
+    };
+
+    if (setNotifications) {
+      setNotifications((prev) => [newNotif, ...prev]);
+    } else {
+      try {
+        const notifsStr = localStorage.getItem('veloria-notifications');
+        const currentNotifs = notifsStr ? JSON.parse(notifsStr) : [];
+        localStorage.setItem('veloria-notifications', JSON.stringify([newNotif, ...currentNotifs]));
+        window.dispatchEvent(new Event('storage'));
+      } catch (e) {
+        console.warn('Failed to update notifications in localStorage:', e);
+      }
     }
 
     // Add administrative activity log
     addLog(`حذف نهائي للمنتج الإعلاني: [${targetProduct.title}] بسبب: "${reason}"`);
     alert(`تم حذف المنتج "${targetProduct.title}" بنجاح وإخطار التاجر بالسبب رقابياً.`);
+    setDeletingProductObj(null);
+    setDeletionReasonInput('');
   };
 
   // Reports Handlers
@@ -659,6 +966,10 @@ export default function AdminPanel({
     
     if (!matchSearch) return false;
 
+    if (userRoleFilter !== 'all') {
+      if (u.role !== userRoleFilter) return false;
+    }
+
     if (userFilter === 'verified') return u.badges.includes('verified');
     if (userFilter === 'suspended') return u.status === 'suspended';
     if (userFilter === 'banned') return u.status === 'banned';
@@ -678,9 +989,9 @@ export default function AdminPanel({
     return matchesSearch && matchesStatus && matchesType;
   });
 
-  const filteredProductsList = products.filter(p => {
+  const filteredProductsList = productsToUse.filter(p => {
     const query = productSearch.toLowerCase();
-    const seller = users.find(u => u.id === p.sellerId);
+    const seller = usersToUse.find(u => u.id === p.sellerId);
     const matchSearch = p.title.toLowerCase().includes(query) || 
                         (seller ? seller.name.toLowerCase().includes(query) : false) || 
                         p.description.toLowerCase().includes(query);
@@ -1138,7 +1449,7 @@ export default function AdminPanel({
 
                   <div className="space-y-2 max-h-[160px] overflow-y-auto">
                     {categories.slice(0, 5).map((cat, idx) => {
-                      const count = products.filter(p => p.categoryId === cat.id).length;
+                      const count = productsToUse.filter(p => String(p.categoryId) === String(cat.id)).length;
                       return (
                         <div key={cat.id} className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850">
                           <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
@@ -1162,14 +1473,14 @@ export default function AdminPanel({
                   </h4>
 
                   <div className="space-y-2">
-                    {users.slice(0, 3).map((u) => (
+                    {usersToUse.slice(0, 3).map((u) => (
                       <div key={u.id} className="flex items-center justify-between text-xs p-1.5 border-b border-slate-100 dark:border-slate-800/60">
                         <div className="flex items-center gap-2">
                           <img src={u.avatar} className="w-6 h-6 rounded-full object-cover" />
                           <span className="text-[10px] font-bold text-slate-800 dark:text-slate-200">{u.name}</span>
                         </div>
                         <div className="text-[10px] text-amber-500 font-bold font-mono">
-                          ⭐ {u.ratingAverage || '5.0'}
+                          {u.ratingAverage > 0 ? `⭐ ${u.ratingAverage}` : 'لا يوجد تقييم'}
                         </div>
                       </div>
                     ))}
@@ -1190,8 +1501,8 @@ export default function AdminPanel({
           {/* TAB 2: Users Management */}
           {activeTab === 'users' && (
             <div className="space-y-4">
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-50 dark:bg-slate-950/30 p-3 rounded-2xl border border-slate-100 dark:border-slate-850">
-                <div className="relative w-full sm:w-72">
+              <div className="flex flex-col md:flex-row items-center justify-between gap-3 bg-slate-50 dark:bg-slate-950/30 p-3 rounded-2xl border border-slate-100 dark:border-slate-850">
+                <div className="relative w-full md:w-72">
                   <input
                     type="text"
                     placeholder="ابحث باسم العضو، اسم المستخدم، البريد..."
@@ -1202,20 +1513,37 @@ export default function AdminPanel({
                   <Search className="w-4 h-4 text-slate-400 absolute top-3 right-3" />
                 </div>
 
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  <span className="text-[10px] text-slate-400 font-bold shrink-0">فلترة الحالة:</span>
-                  <select
-                    value={userFilter}
-                    onChange={(e: any) => setUserFilter(e.target.value)}
-                    className="text-xs p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 w-full sm:w-auto"
-                  >
-                    <option value="all">الكل ({totalUsers})</option>
-                    <option value="active">النشطين</option>
-                    <option value="verified">الموثقين فقط</option>
-                    <option value="suspended">المعلقين</option>
-                    <option value="banned">المحظورين</option>
-                    <option value="deactivated">المعطلين ذاتياً (Deactivated)</option>
-                  </select>
+                <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <span className="text-[10px] text-slate-400 font-bold shrink-0">فلترة الحالة:</span>
+                    <select
+                      value={userFilter}
+                      onChange={(e: any) => setUserFilter(e.target.value)}
+                      className="text-xs p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 w-full sm:w-auto"
+                    >
+                      <option value="all">الكل ({totalUsers})</option>
+                      <option value="active">النشطين</option>
+                      <option value="verified">الموثقين فقط</option>
+                      <option value="suspended">المعلقين</option>
+                      <option value="banned">المحظورين</option>
+                      <option value="deactivated">المعطلين ذاتياً (Deactivated)</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <span className="text-[10px] text-slate-400 font-bold shrink-0">فلترة الدور:</span>
+                    <select
+                      value={userRoleFilter}
+                      onChange={(e: any) => setUserRoleFilter(e.target.value)}
+                      className="text-xs p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 w-full sm:w-auto"
+                    >
+                      <option value="all">الكل</option>
+                      <option value="visitor">عضو</option>
+                      <option value="user">تاجر</option>
+                      <option value="moderator">مشرف</option>
+                      <option value="admin">مدير</option>
+                    </select>
+                  </div>
                 </div>
               </div>
 
@@ -1228,6 +1556,7 @@ export default function AdminPanel({
                       <th className="p-3 text-[10px]">المدينة</th>
                       <th className="p-3 text-[10px]">التقييم</th>
                       <th className="p-3 text-[10px]">الرتبة / الثقة</th>
+                      <th className="p-3 text-[10px]">الدور / الصلاحية</th>
                       <th className="p-3 text-[10px]">تاريخ الانضمام</th>
                       <th className="p-3 text-[10px]">الحالة</th>
                       <th className="p-3 text-[10px]">الإجراءات</th>
@@ -1249,10 +1578,25 @@ export default function AdminPanel({
                           </div>
                         </td>
                         <td className="p-3 text-slate-600 dark:text-slate-400">{u.city || 'غير محدد'}</td>
-                        <td className="p-3 text-amber-500 font-bold font-mono">⭐ {u.ratingAverage}</td>
+                        <td className="p-3 text-amber-500 font-bold font-mono">
+                          {u.ratingAverage > 0 ? `⭐ ${u.ratingAverage}` : 'لا يوجد تقييم'}
+                        </td>
                         <td className="p-3">
                           <span className="text-[10px] bg-indigo-500/5 text-indigo-600 dark:text-indigo-400 font-bold px-2 py-0.5 rounded-full border border-indigo-500/10">
                             {u.trustLevel || 'عضو عادي'}
+                          </span>
+                        </td>
+                        <td className="p-3">
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                            u.role === 'admin'
+                              ? 'bg-rose-500/10 text-rose-600 border border-rose-500/20'
+                              : u.role === 'moderator'
+                              ? 'bg-amber-500/10 text-amber-600 border border-amber-500/20'
+                              : u.role === 'user'
+                              ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20'
+                              : 'bg-slate-500/10 text-slate-500 border border-slate-500/20'
+                          }`}>
+                            {u.role === 'admin' ? 'مدير' : u.role === 'moderator' ? 'مشرف' : u.role === 'user' ? 'تاجر' : 'عضو'}
                           </span>
                         </td>
                         <td className="p-3 text-slate-400 font-mono">{u.joinedAt || '2026-01-01'}</td>
@@ -1269,8 +1613,31 @@ export default function AdminPanel({
                             {u.status === 'suspended' ? 'معلق' : u.status === 'banned' ? 'محظور' : u.status === 'deactivated' ? 'معطل ذاتياً' : 'نشط'}
                           </span>
                         </td>
-                        <td className="p-3 min-w-[200px]">
+                        <td className="p-3 min-w-[240px]">
                           <div className="flex items-center gap-1.5 flex-wrap">
+                            {/* View info action */}
+                            <button
+                              onClick={() => setViewingUserObj(u)}
+                              className="p-1 text-sky-500 hover:text-sky-600 cursor-pointer"
+                              title="عرض معلومات العضو التفصيلية"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+
+                            {/* Edit Role action */}
+                            <button
+                              onClick={() => {
+                                setChangingRoleUser(u);
+                                setSelectedNewRole(u.role);
+                                setRoleChangeConfirm(false);
+                                setRoleError(null);
+                              }}
+                              className="p-1 text-teal-500 hover:text-teal-600 cursor-pointer"
+                              title="تغيير دور المستخدم"
+                            >
+                              <Shield className="w-4 h-4" />
+                            </button>
+
                             <button
                               onClick={() => setEditingUser(u)}
                               className="p-1 text-indigo-500 hover:text-indigo-600 cursor-pointer"
@@ -1321,6 +1688,18 @@ export default function AdminPanel({
                                 {u.badges.includes('verified') ? 'إلغاء التوثيق' : 'توثيق ✔️'}
                               </button>
                             )}
+
+                            {/* Delete User action */}
+                            <button
+                              onClick={() => {
+                                setDeletingUserObj(u);
+                                setDeleteConfirmStep(1);
+                              }}
+                              className="p-1 text-rose-500 hover:text-rose-600 cursor-pointer"
+                              title="حذف الحساب نهائياً"
+                            >
+                              <Trash className="w-4 h-4" />
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -1330,8 +1709,6 @@ export default function AdminPanel({
               </div>
             </div>
           )}
-
-          {/* TAB 3: Products Management */}
           {activeTab === 'products' && (
             <div className="space-y-4">
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-50 dark:bg-slate-950/30 p-3 rounded-2xl border border-slate-100 dark:border-slate-850">
@@ -1377,29 +1754,55 @@ export default function AdminPanel({
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                     {filteredProductsList.map((p) => {
-                      const category = categories.find(c => c.id === p.categoryId);
+                      const category = categories.find(c => String(c.id) === String(p.categoryId));
                       const seller = users.find(u => u.id === p.sellerId);
                       return (
                         <tr key={p.id} className="hover:bg-slate-50/40 dark:hover:bg-slate-850/10 transition-colors">
                           <td className="p-3 flex items-center gap-2 min-w-[200px]">
-                            <img src={p.images[0]} className="w-9 h-9 rounded-lg object-cover" />
-                            <span className="font-bold truncate max-w-[150px] text-slate-800 dark:text-slate-200" title={p.title}>
+                            <img 
+                              src={p.images[0]} 
+                              className="w-9 h-9 rounded-lg object-cover cursor-zoom-in hover:opacity-80 transition-opacity" 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setLightboxImage(p.images[0]);
+                              }}
+                              title="تكبير الصورة"
+                            />
+                            <span 
+                              onClick={() => onSelectProduct?.(p)}
+                              className="font-bold truncate max-w-[150px] text-slate-800 dark:text-slate-200 hover:text-amber-500 hover:underline cursor-pointer transition-colors" 
+                              title={p.title}
+                            >
                               {p.title}
                             </span>
                           </td>
                           <td className="p-3 text-slate-600 dark:text-slate-400">{category?.name || 'تصنيف آخر'}</td>
                           <td className="p-3 font-mono font-bold text-slate-700 dark:text-slate-300">{p.price} {p.currency}</td>
-                          <td className="p-3 font-bold text-slate-600 dark:text-slate-400">{seller?.name || 'غير معروف'}</td>
+                          <td className="p-3 font-bold text-slate-600 dark:text-slate-400">
+                            {seller ? (
+                              <span 
+                                onClick={() => onSelectSeller?.(seller)}
+                                className="hover:text-amber-500 hover:underline cursor-pointer transition-colors"
+                                title="عرض الملف الشخصي للبائع"
+                              >
+                                {seller.name}
+                              </span>
+                            ) : (
+                              'غير معروف'
+                            )}
+                          </td>
                           <td className="p-3 font-mono text-slate-400">{p.viewsCount || 0}</td>
                           <td className="p-3">
                             <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
-                              p.status === 'active'
-                                ? 'bg-emerald-50 text-emerald-600'
+                              p.status === 'hidden'
+                                ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/30 dark:text-rose-400'
+                                : p.status === 'active'
+                                ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400'
                                 : p.status === 'sold'
-                                ? 'bg-amber-50 text-amber-600'
-                                : 'bg-rose-50 text-rose-600'
+                                ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400'
+                                : 'bg-slate-50 text-slate-600 dark:bg-slate-900 dark:text-slate-400'
                             }`}>
-                              {p.status === 'active' ? 'نشط' : p.status === 'sold' ? 'مباع' : 'مخفي بمخالفة'}
+                              {p.status === 'hidden' ? 'مخفي بمخالفة' : p.status === 'active' ? 'نشط' : p.status === 'sold' ? 'مباع' : 'منتهي الصلاحية'}
                             </span>
                           </td>
                           <td className="p-3">
@@ -1414,7 +1817,10 @@ export default function AdminPanel({
 
                               {p.status !== 'hidden' ? (
                                 <button
-                                  onClick={() => handleProductStatusToggle(p.id, 'hidden')}
+                                  onClick={() => {
+                                    console.log("Hide button clicked");
+                                    handleProductStatusToggle(p.id, 'hidden');
+                                  }}
                                   className="p-1 text-amber-500 hover:text-rose-500 cursor-pointer"
                                   title="إخفاء المنتج من السوق للمخالفة"
                                 >
@@ -1523,6 +1929,7 @@ export default function AdminPanel({
                               {rep.type === 'product' && targetProduct && targetProduct.status !== 'hidden' && (
                                 <button
                                   onClick={() => {
+                                    console.log("Hide button clicked");
                                     handleProductStatusToggle(targetProduct.id, 'hidden');
                                     handleAcceptReport(rep.id);
                                   }}
@@ -1817,7 +2224,9 @@ export default function AdminPanel({
                         </td>
                         <td className="p-3 text-slate-500">{seller.city || 'الرياض'}</td>
                         <td className="p-3 font-mono">{seller.followersCount || 10} متابع</td>
-                        <td className="p-3 font-mono text-amber-500 font-bold">⭐ {seller.ratingAverage}</td>
+                        <td className="p-3 font-mono text-amber-500 font-bold">
+                          {seller.ratingAverage > 0 ? `⭐ ${seller.ratingAverage}` : 'لا يوجد تقييم بعد'}
+                        </td>
                         <td className="p-3">
                           <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-850 px-2 py-0.5 rounded">
                             {seller.trustLevel || 'موثوق'}
@@ -2453,6 +2862,366 @@ export default function AdminPanel({
         </div>
       )}
 
+      {/* MODAL: View User Info Modal */}
+      {viewingUserObj && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-150 dark:border-slate-800 shadow-2xl max-w-lg w-full p-6 text-right">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3 mb-4">
+              <h3 className="font-extrabold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                <Info className="w-5 h-5 text-indigo-500" />
+                <span>تفاصيل ومعلومات العضو كاملة</span>
+              </h3>
+              <button
+                onClick={() => setViewingUserObj(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 text-xs font-bold"
+              >
+                إغلاق ✕
+              </button>
+            </div>
+
+            <div className="flex items-center gap-4 mb-4 bg-slate-50 dark:bg-slate-950/50 p-3 rounded-2xl border border-slate-100 dark:border-slate-850">
+              <img src={viewingUserObj.avatar} className="w-14 h-14 rounded-full object-cover border-2 border-slate-200 dark:border-slate-800" />
+              <div>
+                <h4 className="font-black text-slate-900 dark:text-white text-base leading-snug flex items-center gap-1.5 flex-wrap">
+                  <span>{viewingUserObj.name}</span>
+                  {viewingUserObj.badges.includes('verified') && (
+                    <span className="text-[9px] bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded font-bold">موثق ✔️</span>
+                  )}
+                </h4>
+                <p className="text-[10px] text-slate-400 font-mono mt-0.5">{viewingUserObj.email}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="bg-slate-50 dark:bg-slate-950/20 p-2.5 rounded-xl border border-slate-100 dark:border-slate-850/60">
+                <span className="text-[10px] text-slate-400 block mb-0.5">اسم المستخدم (Username):</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200 font-mono">@{viewingUserObj.username || 'غير متوفر'}</span>
+              </div>
+              <div className="bg-slate-50 dark:bg-slate-950/20 p-2.5 rounded-xl border border-slate-100 dark:border-slate-850/60">
+                <span className="text-[10px] text-slate-400 block mb-0.5">المدينة:</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200">{viewingUserObj.city || 'غير محدد'}</span>
+              </div>
+              <div className="bg-slate-50 dark:bg-slate-950/20 p-2.5 rounded-xl border border-slate-100 dark:border-slate-850/60">
+                <span className="text-[10px] text-slate-400 block mb-0.5">الدور / الصلاحية:</span>
+                <span className="font-bold text-indigo-600 dark:text-indigo-400">
+                  {viewingUserObj.role === 'admin' ? 'مدير' : viewingUserObj.role === 'moderator' ? 'مشرف' : viewingUserObj.role === 'user' ? 'تاجر' : 'عضو'}
+                </span>
+              </div>
+              <div className="bg-slate-50 dark:bg-slate-950/20 p-2.5 rounded-xl border border-slate-100 dark:border-slate-850/60">
+                <span className="text-[10px] text-slate-400 block mb-0.5">تاريخ الانضمام:</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200 font-mono">{viewingUserObj.joinedAt || '2026-01-01'}</span>
+              </div>
+              <div className="bg-slate-50 dark:bg-slate-950/20 p-2.5 rounded-xl border border-slate-100 dark:border-slate-850/60">
+                <span className="text-[10px] text-slate-400 block mb-0.5">عدد المنتجات المعلنة:</span>
+                <span className="font-bold text-amber-600 dark:text-amber-400 font-mono">{products.filter(p => p.sellerId === viewingUserObj.id).length} إعلان</span>
+              </div>
+              <div className="bg-slate-50 dark:bg-slate-950/20 p-2.5 rounded-xl border border-slate-100 dark:border-slate-850/60">
+                <span className="text-[10px] text-slate-400 block mb-0.5">عدد طلبات الشراء / البيع:</span>
+                <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono">
+                  {orders.filter(o => o.buyerId === viewingUserObj.id || o.sellerId === viewingUserObj.id).length} طلب
+                </span>
+              </div>
+              <div className="bg-slate-50 dark:bg-slate-950/20 p-2.5 rounded-xl border border-slate-100 dark:border-slate-850/60">
+                <span className="text-[10px] text-slate-400 block mb-0.5">المتابعين (Followers):</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200 font-mono">{viewingUserObj.followersCount || 0} متابع</span>
+              </div>
+              <div className="bg-slate-50 dark:bg-slate-950/20 p-2.5 rounded-xl border border-slate-100 dark:border-slate-850/60">
+                <span className="text-[10px] text-slate-400 block mb-0.5">متوسط التقييم ومجموع الآراء:</span>
+                <span className="font-bold text-amber-500 font-mono">
+                  {viewingUserObj.ratingAverage > 0 ? (
+                    `⭐ ${viewingUserObj.ratingAverage} (${reviews.filter(r => { const prod = products.find(p => p.id === r.productId); return prod && prod.sellerId === viewingUserObj.id; }).length || viewingUserObj.ratingsCount || 0} رأي)`
+                  ) : (
+                    'لا يوجد تقييم بعد'
+                  )}
+                </span>
+              </div>
+              <div className="bg-slate-50 dark:bg-slate-950/20 p-2.5 rounded-xl border border-slate-100 dark:border-slate-850/60">
+                <span className="text-[10px] text-slate-400 block mb-0.5">حالة الحساب الحالية:</span>
+                <span className={`font-bold ${
+                  viewingUserObj.status === 'suspended' ? 'text-amber-600' : viewingUserObj.status === 'banned' ? 'text-rose-600' : viewingUserObj.status === 'deactivated' ? 'text-slate-500' : 'text-emerald-600'
+                }`}>
+                  {viewingUserObj.status === 'suspended' ? 'معلق مؤقتاً' : viewingUserObj.status === 'banned' ? 'محظور نهائياً' : viewingUserObj.status === 'deactivated' ? 'معطل ذاتياً' : 'نشط وعامل'}
+                </span>
+              </div>
+              <div className="bg-slate-50 dark:bg-slate-950/20 p-2.5 rounded-xl border border-slate-100 dark:border-slate-850/60">
+                <span className="text-[10px] text-slate-400 block mb-0.5">حالة توثيق المتجر:</span>
+                <span className={`font-bold ${viewingUserObj.badges.includes('verified') ? 'text-emerald-600' : 'text-slate-400'}`}>
+                  {viewingUserObj.badges.includes('verified') ? 'متجر موثق رسمي ✔️' : 'غير موثق'}
+                </span>
+              </div>
+            </div>
+
+            {viewingUserObj.bio && (
+              <div className="mt-3 bg-slate-50 dark:bg-slate-950/20 p-3 rounded-xl border border-slate-100 dark:border-slate-850/60 text-xs text-right">
+                <span className="text-[10px] text-slate-400 block mb-1">النبذة والوصف التعريفي:</span>
+                <p className="text-slate-700 dark:text-slate-300 leading-relaxed font-sans">{viewingUserObj.bio}</p>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 pt-4 mt-4 border-t border-slate-100 dark:border-slate-800">
+              <button
+                onClick={() => setViewingUserObj(null)}
+                className="w-full py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold rounded-xl text-xs cursor-pointer text-center"
+              >
+                إغلاق نافذة العرض
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Change User Role Modal */}
+      {changingRoleUser && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-150 dark:border-slate-800 shadow-2xl max-w-md w-full p-6 text-right">
+            <h3 className="font-extrabold text-sm text-slate-900 dark:text-white mb-2">تغيير دور وصلاحية المستخدم</h3>
+            <p className="text-[10px] text-slate-400 mb-4">أنت تقوم بتغيير الدور الحقيقي للمستخدم مباشرة في قاعدة البيانات الشخصية.</p>
+
+            <div className="space-y-4">
+              {roleError && (
+                <div className="p-3 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/25 font-bold text-xs">
+                  ⚠️ {roleError}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[10px] text-slate-400 mb-1">اسم العضو:</label>
+                <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-150 dark:border-slate-850 font-bold text-xs">
+                  {changingRoleUser.name}
+                </div>
+              </div>
+
+              {!roleChangeConfirm ? (
+                <>
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-2">اختر الدور الجديد:</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { value: 'visitor', label: 'عضو' },
+                        { value: 'user', label: 'تاجر' },
+                        { value: 'moderator', label: 'مشرف' },
+                        { value: 'admin', label: 'مدير' }
+                      ].map((roleOption) => (
+                        <label
+                          key={roleOption.value}
+                          className={`flex items-center justify-between p-3 rounded-xl border text-xs font-bold cursor-pointer transition-all ${
+                            selectedNewRole === roleOption.value
+                              ? 'bg-indigo-500/10 border-indigo-500 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                              : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-850 hover:bg-slate-50 dark:hover:bg-slate-850/20 text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          <span>{roleOption.label}</span>
+                          <input
+                            type="radio"
+                            name="new_role"
+                            value={roleOption.value}
+                            checked={selectedNewRole === roleOption.value}
+                            onChange={() => {
+                              setSelectedNewRole(roleOption.value as any);
+                              setRoleError(null);
+                            }}
+                            className="accent-indigo-600"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (selectedNewRole === 'admin' && currentUser.role !== 'admin') {
+                          setRoleError('لا يسمح بتعيين صلاحية "مدير" إلا إذا كان المدير الحالي هو من يقوم بذلك.');
+                          return;
+                        }
+                        if (selectedNewRole === changingRoleUser.role) {
+                          setRoleError('الرجاء اختيار دور جديد مختلف عن الدور الحالي.');
+                          return;
+                        }
+                        setRoleChangeConfirm(true);
+                        setRoleError(null);
+                      }}
+                      className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs cursor-pointer text-center"
+                    >
+                      تغيير الدور...
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setChangingRoleUser(null)}
+                      className="px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold cursor-pointer"
+                    >
+                      إلغاء
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-400">
+                    <p className="font-extrabold text-xs mb-1">⚠️ تأكيد تغيير صلاحية المستخدم</p>
+                    <p className="text-[10px] leading-relaxed">
+                      هل أنت متأكد من تغيير صلاحية العضو <strong className="font-bold underline">{changingRoleUser.name}</strong> من صلاحية <strong className="font-bold">({changingRoleUser.role === 'admin' ? 'مدير' : changingRoleUser.role === 'moderator' ? 'مشرف' : changingRoleUser.role === 'user' ? 'تاجر' : 'عضو'})</strong> إلى صلاحية <strong className="text-indigo-600 dark:text-indigo-400 font-bold">({selectedNewRole === 'admin' ? 'مدير' : selectedNewRole === 'moderator' ? 'مشرف' : selectedNewRole === 'user' ? 'تاجر' : 'عضو'})</strong>؟
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        // Update local state
+                        if (setUsers) {
+                          setUsers(prev => prev.map(u => u.id === changingRoleUser.id ? { ...u, role: selectedNewRole } : u));
+                        }
+
+                        // Update Database directly
+                        if (isSupabaseConfigured && supabase) {
+                          try {
+                            const { error } = await supabase
+                              .from('profiles')
+                              .update({ role: selectedNewRole })
+                              .eq('id', changingRoleUser.id);
+                            if (error) throw error;
+                          } catch (dbErr) {
+                            console.error('Database role update failed:', dbErr);
+                          }
+                        }
+
+                        addLog(`عدّل صلاحية المستخدم ${changingRoleUser.name} إلى: ${selectedNewRole}`);
+                        setChangingRoleUser(null);
+                        setRoleChangeConfirm(false);
+                      }}
+                      className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs cursor-pointer text-center"
+                    >
+                      نعم، متأكد وحفظ التعديل
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRoleChangeConfirm(false)}
+                      className="px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold cursor-pointer"
+                    >
+                      تراجع
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Double Confirm Delete Account Modal */}
+      {deletingUserObj && deleteConfirmStep > 0 && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-rose-150 dark:border-rose-950 shadow-2xl max-w-md w-full p-6 text-right">
+            <h3 className="font-extrabold text-sm text-rose-600 dark:text-rose-400 mb-2 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 animate-pulse" />
+              <span>تحذير أمني: حذف الحساب نهائياً من السيستم</span>
+            </h3>
+            
+            {deleteConfirmStep === 1 ? (
+              <>
+                <p className="text-xs text-slate-600 dark:text-slate-400 mb-4 leading-relaxed">
+                  هل أنت متأكد من رغبتك في حذف حساب العضو <strong className="text-slate-800 dark:text-white">{deletingUserObj.name}</strong> نهائياً من المنصة؟ 
+                  <br />
+                  <span className="text-rose-500 font-bold block mt-2">تنبيه: سيؤدي هذا الإجراء إلى تصفية كافة بياناته لحماية سلامة وسلامة الترابطات والعلاقات في قاعدة البيانات.</span>
+                </p>
+                <div className="flex items-center gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                  <button
+                    onClick={() => setDeleteConfirmStep(2)}
+                    className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs cursor-pointer"
+                  >
+                    نعم، متأكد (متابعة للتأكيد الثاني)
+                  </button>
+                  <button
+                    onClick={() => {
+                      setDeletingUserObj(null);
+                      setDeleteConfirmStep(0);
+                    }}
+                    className="px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold cursor-pointer"
+                  >
+                    إلغاء وتراجع
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-xs text-slate-600 dark:text-slate-400 mb-4 leading-relaxed">
+                  <span className="bg-rose-500/10 text-rose-600 px-2 py-1.5 rounded font-black block text-center mb-3 text-xs">
+                    تأكيد نهائي وحاسم (خطوة غير قابلة للتراجع بعد التنفيذ)
+                  </span>
+                  يرجى تأكيد قرار حذف الحساب للمرة الثانية والأخيرة لحساب العضو <strong className="text-slate-800 dark:text-white">{deletingUserObj.name}</strong>. سيتم مسح كافة ملفاته وإعلاناته ومراسلاته لسلامة قاعدة البيانات.
+                </p>
+                <div className="flex items-center gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                  <button
+                    onClick={async () => {
+                      const uId = deletingUserObj.id;
+                      
+                      // Update local products state
+                      if (setProducts) {
+                        setProducts(prev => prev.filter(p => p.sellerId !== uId));
+                      }
+                      // Update local users state
+                      if (setUsers) {
+                        setUsers(prev => prev.filter(u => u.id !== uId));
+                      }
+                      
+                      // Supabase cascade deletion
+                      if (isSupabaseConfigured && supabase) {
+                        try {
+                          await supabase.from('favorites').delete().eq('user_id', uId);
+                          await supabase.from('follows').delete().eq('follower_id', uId);
+                          await supabase.from('follows').delete().eq('following_id', uId);
+                          await supabase.from('reviews').delete().eq('rater_id', uId);
+                          await supabase.from('reviews').delete().eq('rated_user_id', uId);
+                          
+                          // Delete product images & products
+                          const { data: userProds } = await supabase.from('products').select('id').eq('user_id', uId);
+                          if (userProds && userProds.length > 0) {
+                            const prodIds = userProds.map(p => p.id);
+                            await supabase.from('product_images').delete().in('product_id', prodIds);
+                            await supabase.from('favorites').delete().in('product_id', prodIds);
+                            await supabase.from('products').delete().eq('user_id', uId);
+                          }
+                          
+                          await supabase.from('orders').delete().eq('buyer_id', uId);
+                          await supabase.from('orders').delete().eq('seller_id', uId);
+                          await supabase.from('reports').delete().eq('reporter_id', uId);
+                          await supabase.from('reports').delete().eq('reported_user_id', uId);
+                          await supabase.from('messages').delete().eq('sender_id', uId);
+                          await supabase.from('messages').delete().eq('receiver_id', uId);
+                          await supabase.from('verification_requests').delete().eq('store_id', uId);
+                          
+                          // Delete from profiles
+                          await supabase.from('profiles').delete().eq('id', uId);
+                        } catch (dbErr) {
+                          console.error('Error in DB cascade deletion:', dbErr);
+                        }
+                      }
+
+                      addLog(`حذف حساب العضو ${deletingUserObj.name} نهائياً وحذف جميع البيانات المرفقة به لضمان سلامة العلاقات`);
+                      setDeletingUserObj(null);
+                      setDeleteConfirmStep(0);
+                    }}
+                    className="flex-1 py-2.5 bg-rose-700 hover:bg-rose-800 text-white font-black rounded-xl text-xs cursor-pointer text-center"
+                  >
+                    تأكيد الحذف النهائي الشامل
+                  </button>
+                  <button
+                    onClick={() => {
+                      setDeletingUserObj(null);
+                      setDeleteConfirmStep(0);
+                    }}
+                    className="px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold cursor-pointer"
+                  >
+                    تراجع وإلغاء
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* MODAL 2: Edit Product Modal */}
       {editingProduct && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
@@ -2553,6 +3322,86 @@ export default function AdminPanel({
           </div>
         </div>
       )}
+
+      {/* MODAL 4: Delete Product Confirmation Modal */}
+      {deletingProductObj && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-150 dark:border-slate-800 shadow-2xl max-w-md w-full p-6 text-right rtl">
+            <h3 className="font-extrabold text-sm text-slate-900 dark:text-white mb-2 flex items-center gap-2">
+              <span className="text-rose-600">⚠️</span>
+              <span>تأكيد الحذف النهائي للمنتج</span>
+            </h3>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-4">
+              أنت بصدد حذف المنتج <strong className="text-slate-900 dark:text-white">"{deletingProductObj.title}"</strong> بشكل نهائي من قاعدة البيانات ومسح صوره من الخادم. هذا الإجراء غير قابل للتراجع عنه.
+            </p>
+
+            <form onSubmit={(e) => { e.preventDefault(); handleConfirmDeleteProduct(); }} className="space-y-3">
+              <div>
+                <label className="block text-[10px] text-slate-400 mb-1 font-bold">سبب حذف المنتج وإخطار التاجر (مطلوب):</label>
+                <textarea
+                  value={deletionReasonInput}
+                  onChange={(e) => setDeletionReasonInput(e.target.value)}
+                  rows={3}
+                  placeholder="مثال: المنتج مخالف للسياسات العامة أو يحتوي على محتوى غير لائق..."
+                  className="w-full text-xs p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 text-slate-900 dark:text-white"
+                  required
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="submit"
+                  className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs cursor-pointer"
+                >
+                  تأكيد الحذف النهائي
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setDeletingProductObj(null); setDeletionReasonInput(''); }}
+                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold cursor-pointer"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox for Image Preview */}
+      {lightboxImage && (
+        <div 
+          className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 z-50 cursor-zoom-out"
+          onClick={() => setLightboxImage(null)}
+        >
+          <div className="relative max-w-4xl w-full max-h-[85vh] flex items-center justify-center">
+            <img 
+              src={lightboxImage} 
+              alt="معاينة المنتج" 
+              className="max-w-full max-h-[80vh] rounded-2xl object-contain shadow-2xl border-4 border-white/10"
+              onClick={(e) => e.stopPropagation()}
+            />
+            <button 
+              onClick={() => setLightboxImage(null)}
+              className="absolute top-4 right-4 p-2 rounded-full bg-slate-900/60 hover:bg-slate-900/80 text-white cursor-pointer transition-colors"
+              title="إغلاق"
+            >
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Hide Product Modal */}
+      <HideProductModal
+        isOpen={hideProductModal.isOpen}
+        onClose={() => setHideProductModal(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={(reason) => {
+          executeProductStatusToggle(hideProductModal.productId, hideProductModal.action, reason);
+        }}
+      />
     </div>
   );
 }
