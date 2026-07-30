@@ -109,6 +109,9 @@ export default function ProductCard({
             className="w-4.5 h-4.5 rounded-full object-cover"
           />
           <span className="truncate max-w-[100px] hover:underline">{seller?.name}</span>
+          {seller?.badges.includes('verified') && (
+            <ShieldCheck className="w-3 h-3 text-emerald-400 shrink-0" title="متجر موثق ✔️" />
+          )}
         </div>
       </div>
 

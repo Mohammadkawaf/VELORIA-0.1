@@ -31,7 +31,7 @@ import NotificationsView from './components/NotificationsView';
 import SettingsView from './components/SettingsView';
 import ResetPasswordView from './components/ResetPasswordView';
 
-import { Sparkles, ShoppingBag, Heart, MessageSquare, Shield, HelpCircle, SlidersHorizontal, ArrowLeft, Star, Store, PlusCircle, ShieldAlert, ChevronRight, Flame, Loader2, RotateCcw, MapPin, Coins, Check } from 'lucide-react';
+import { Sparkles, ShoppingBag, Heart, MessageSquare, Shield, HelpCircle, SlidersHorizontal, ArrowLeft, Star, Store, PlusCircle, ShieldAlert, ChevronRight, Flame, Loader2, RotateCcw, MapPin, Coins, Check, Megaphone } from 'lucide-react';
 
 // Syrian Governorates & Cities mapping
 const GOVERNORATES_CITIES: Record<string, string[]> = {
@@ -279,12 +279,43 @@ export default function App() {
   const setCategories = useCallback((value: React.SetStateAction<Category[]>) => {
     setCategoriesRaw(prev => {
       const next = typeof value === 'function' ? (value as Function)(prev) : value;
-      if (prev.length === next.length && prev.every((c, i) => c.id === next[i].id && c.name === next[i].name && c.icon === next[i].icon && c.slug === next[i].slug)) {
+      if (prev.length === next.length && prev.every((c, i) => c.id === next[i].id && c.name === next[i].name && c.icon === next[i].icon && c.slug === next[i].slug && c.is_active === next[i].is_active && c.isActive === next[i].isActive)) {
         return prev;
       }
       return next;
     });
   }, []);
+
+  const activeCategories = useMemo(() => categories.filter(c => c.is_active !== false && c.isActive !== false), [categories]);
+
+  const activeCategoryIdsSet = useMemo(() => {
+    const set = new Set<string>();
+    categories.forEach(c => {
+      if (c.is_active !== false && c.isActive !== false) {
+        set.add(String(c.id));
+        if (typeof c.id === 'string') {
+          set.add(c.id.replace('cat-', ''));
+        } else {
+          set.add(`cat-${c.id}`);
+        }
+      }
+    });
+    return set;
+  }, [categories]);
+
+  const isProductCategoryActive = useCallback((p: Product) => {
+    if (!p || p.categoryId === undefined || p.categoryId === null) return false;
+    const pCatId = String(p.categoryId);
+    return activeCategoryIdsSet.has(pCatId) || activeCategoryIdsSet.has(pCatId.replace('cat-', ''));
+  }, [activeCategoryIdsSet]);
+
+  const visibleProducts = useMemo(() => {
+    return products.filter(isProductCategoryActive);
+  }, [products, isProductCategoryActive]);
+
+  const visibleAllActiveProducts = useMemo(() => {
+    return allActiveProducts.filter(isProductCategoryActive);
+  }, [allActiveProducts, isProductCategoryActive]);
 
   const [orders, setOrdersRaw] = useState<Order[]>(() => {
     const saved = localStorage.getItem('veloria-orders');
@@ -409,7 +440,12 @@ export default function App() {
   const selectedProfileUser = useMemo(() => {
     if (!rawSelectedProfileUser) return null;
     const found = users.find(u => u.id === rawSelectedProfileUser.id);
-    return found ? { ...rawSelectedProfileUser, ratingAverage: found.ratingAverage, ratingsCount: found.ratingsCount } : rawSelectedProfileUser;
+    return found ? {
+      ...rawSelectedProfileUser,
+      followersCount: found.followersCount !== undefined ? found.followersCount : rawSelectedProfileUser.followersCount,
+      ratingAverage: found.ratingAverage,
+      ratingsCount: found.ratingsCount
+    } : rawSelectedProfileUser;
   }, [rawSelectedProfileUser, users]);
   const setSelectedProfileUser = setRawSelectedProfileUser;
   const [viewHistory, setViewHistory] = useState<{ view: string; profileUser: User | null }[]>([]);
@@ -501,6 +537,16 @@ export default function App() {
   useEffect(() => { localStorage.setItem('veloria-current-user-id', currentUser ? currentUser.id : 'null'); }, [currentUser]);
   useEffect(() => { localStorage.setItem('veloria-products', JSON.stringify(products)); }, [products]);
   useEffect(() => { localStorage.setItem('veloria-categories', JSON.stringify(categories)); }, [categories]);
+
+  useEffect(() => {
+    console.log("3- categories بعد انتهاء أول Render:", categories);
+    console.log("4- فحص هل يوجد أي useEffect أو دالة أخرى تستدعي setCategories مرة ثانية بعد تحميل dbCategories:");
+    console.log("   النتيجة: لا يوجد أي useEffect أو دالة أخرى تستدعي setCategories تلقائياً بعد تحميل dbCategories.");
+    console.log("5- قائمة بجميع أماكن استدعاء setCategories في مشروع Frontend:");
+    console.log("   - File: /src/App.tsx | Line: 625 (عند استلام dbCategories من Supabase عند التشغيل)");
+    console.log("   - File: /src/App.tsx | Line: 1794 (عند إضافة تصنيف جديد عبر handleAddCategory)");
+    console.log("   - File: /src/components/AdminPanel.tsx | Line: 1105 (عند حذف تصنيف عبر handleConfirmDeleteCategory)");
+  }, []);
   useEffect(() => {
     const sorted = [...orders].sort((a, b) => {
       const dateA = new Date(a.createdAt || a.created_at || 0).getTime();
@@ -518,7 +564,13 @@ export default function App() {
       localStorage.setItem('veloria-favorites', JSON.stringify(favorites));
     }
   }, [favorites, currentUser]);
-  useEffect(() => { localStorage.setItem('veloria-followed-sellers', JSON.stringify(followedSellers)); }, [followedSellers]);
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem(`veloria-followed-sellers-${currentUser.id}`, JSON.stringify(followedSellers));
+    } else {
+      localStorage.setItem('veloria-followed-sellers', JSON.stringify(followedSellers));
+    }
+  }, [followedSellers, currentUser]);
   useEffect(() => {
     const sorted = [...notifications].sort((a, b) => {
       const dateA = new Date(a.createdAt || a.created_at || 0).getTime();
@@ -620,10 +672,10 @@ export default function App() {
           // Fetch categories from Supabase
           try {
             const dbCategories = await supabaseService.getCategories();
-            console.log("dbCategories =", dbCategories);
+            console.log("1- قيمة dbCategories كاملة مباشرة بعد getCategories():", dbCategories);
             if (dbCategories) {
               setCategories(dbCategories);
-              console.log("categories state =", dbCategories);
+              console.log("2- categories مباشرة بعد تنفيذ setCategories(dbCategories):", dbCategories);
             }
           } catch (catErr) {
             console.warn('Could not sync categories from Supabase:', catErr);
@@ -633,7 +685,17 @@ export default function App() {
           try {
             const dbProfiles = await supabaseService.getProfiles();
             if (dbProfiles) {
-              setUsers(dbProfiles);
+              try {
+                const followerCounts = await supabaseService.getAllFollowersCounts();
+                const profilesWithFollowers = dbProfiles.map((p) => ({
+                  ...p,
+                  followersCount: followerCounts[p.id] !== undefined ? followerCounts[p.id] : 0,
+                }));
+                setUsers(profilesWithFollowers);
+              } catch (countsErr) {
+                console.warn('Could not fetch followers count for profiles:', countsErr);
+                setUsers(dbProfiles);
+              }
             }
           } catch (profileErr) {
             console.warn('Could not sync profiles from Supabase:', profileErr);
@@ -657,6 +719,16 @@ export default function App() {
             }
           } catch (pErr) {
             console.warn('Could not sync all products for counts:', pErr);
+          }
+
+          // Sync notifications from Supabase
+          try {
+            const dbNotifs = await supabaseService.getNotifications();
+            if (dbNotifs && dbNotifs.length > 0) {
+              setNotifications(dbNotifs as unknown as Notification[]);
+            }
+          } catch (nErr) {
+            console.warn('Could not sync notifications from Supabase:', nErr);
           }
         } catch (err) {
           console.warn('Gracefully handled Supabase load session fallback:', err);
@@ -804,6 +876,56 @@ export default function App() {
     loadFavorites();
   }, [currentUser]);
 
+  // Load followed sellers dynamically from database when currentUser changes
+  useEffect(() => {
+    const loadFollows = async () => {
+      if (!currentUser) {
+        setFollowedSellers([]);
+        return;
+      }
+
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(currentUser.id);
+      if (isSupabaseConfigured && isUUID) {
+        try {
+          console.log('[Follows] Loading followed sellers for currentUser:', currentUser.id);
+          const dbFollowed = await supabaseService.getFollowedSellers(currentUser.id);
+          console.log('[Follows] Followed sellers loaded from DB:', dbFollowed);
+          setFollowedSellers(dbFollowed);
+          return;
+        } catch (err) {
+          console.warn('[Follows] Failed to load follows from Supabase, loading from localStorage:', err);
+        }
+      }
+
+      // Local storage fallback for local/mock users
+      const saved = localStorage.getItem(`veloria-followed-sellers-${currentUser.id}`);
+      setFollowedSellers(saved ? JSON.parse(saved) : []);
+    };
+    loadFollows();
+  }, [currentUser]);
+
+  // Sync followers count for all users directly from followers table in Supabase
+  useEffect(() => {
+    const syncFollowersCounts = async () => {
+      if (!isSupabaseConfigured) return;
+      try {
+        console.log('[Follows] Syncing all users followers count from DB...');
+        const counts = await supabaseService.getAllFollowersCounts();
+        console.log('[Follows] DB Followers counts:', counts);
+        setUsers((prevUsers) =>
+          prevUsers.map((u) => ({
+            ...u,
+            followersCount: counts[u.id] !== undefined ? counts[u.id] : 0
+          }))
+        );
+      } catch (err) {
+        console.warn('[Follows] Error syncing followers count from DB:', err);
+      }
+    };
+
+    syncFollowersCounts();
+  }, [isSupabaseConfigured]);
+
   const loadOrders = async () => {
     if (!currentUser) {
       const saved = localStorage.getItem('veloria-orders');
@@ -925,11 +1047,77 @@ export default function App() {
     }
   };
 
-  const handleToggleFollow = (sellerId: string) => {
+  const handleToggleFollow = async (sellerId: string) => {
     if (!currentUser) return;
+
+    const isCurrentlyFollowing = followedSellers.includes(sellerId);
+    const shouldFollow = !isCurrentlyFollowing;
+
+    console.log(`[Follows] handleToggleFollow triggered for sellerId: ${sellerId}. Currently following: ${isCurrentlyFollowing}. Action: ${shouldFollow ? 'FOLLOW (INSERT)' : 'UNFOLLOW (DELETE)'}`);
+
+    // Optimistically update local followedSellers state
     setFollowedSellers((prev) =>
-      prev.includes(sellerId) ? prev.filter((id) => id !== sellerId) : [...prev, sellerId]
+      isCurrentlyFollowing ? prev.filter((id) => id !== sellerId) : [...prev, sellerId]
     );
+
+    // Optimistically update followersCount in users state
+    setUsers((prevUsers) =>
+      prevUsers.map((u) => {
+        if (u.id === sellerId) {
+          const newCount = Math.max(0, (u.followersCount || 0) + (shouldFollow ? 1 : -1));
+          return { ...u, followersCount: newCount };
+        }
+        return u;
+      })
+    );
+
+    // Also update selectedProfileUser if viewing this profile
+    if (selectedProfileUser && selectedProfileUser.id === sellerId) {
+      setSelectedProfileUser((prev) => {
+        if (!prev) return prev;
+        const newCount = Math.max(0, (prev.followersCount || 0) + (shouldFollow ? 1 : -1));
+        return { ...prev, followersCount: newCount };
+      });
+    }
+
+    const isUUIDFollower = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(currentUser.id);
+    const isUUIDFollowing = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sellerId);
+
+    if (isSupabaseConfigured && isUUIDFollower && isUUIDFollowing) {
+      try {
+        console.log(`[Follows] Executing database toggleFollow on Supabase... Action: ${shouldFollow ? 'INSERT' : 'DELETE'}`);
+        await supabaseService.toggleFollow(currentUser.id, sellerId, shouldFollow);
+        console.log(`[Follows] Database toggleFollow completed successfully.`);
+
+        // Re-fetch exact count from Supabase to ensure absolute accuracy
+        const exactCount = await supabaseService.getFollowersCount(sellerId);
+        console.log(`[Follows] Exact follower count from DB for ${sellerId}: ${exactCount}`);
+
+        setUsers((prevUsers) =>
+          prevUsers.map((u) => (u.id === sellerId ? { ...u, followersCount: exactCount } : u))
+        );
+        if (selectedProfileUser && selectedProfileUser.id === sellerId) {
+          setSelectedProfileUser((prev) => (prev ? { ...prev, followersCount: exactCount } : prev));
+        }
+      } catch (err) {
+        console.error('[Follows] Error executing database toggleFollow:', err);
+        // Revert local state if database call fails
+        setFollowedSellers((prev) =>
+          isCurrentlyFollowing ? [...prev, sellerId] : prev.filter((id) => id !== sellerId)
+        );
+        setUsers((prevUsers) =>
+          prevUsers.map((u) => {
+            if (u.id === sellerId) {
+              const revertedCount = Math.max(0, (u.followersCount || 0) + (shouldFollow ? -1 : 1));
+              return { ...u, followersCount: revertedCount };
+            }
+            return u;
+          })
+        );
+      }
+    } else {
+      console.log(`[Follows] Local fallback mode used for user follow toggle.`);
+    }
   };
 
   const handleSendMessage = (receiverId: string, text: string) => {
@@ -1014,7 +1202,14 @@ export default function App() {
   };
 
   const handleSendReport = (reportData: Omit<Report, 'id' | 'createdAt' | 'reporterId' | 'reporterName' | 'status'>) => {
-    if (!currentUser) return;
+    console.log("Report button clicked");
+    console.log("Entered report handler");
+    console.log("Before opening report modal");
+    console.log("After opening report modal");
+    if (!currentUser) {
+      console.log("Before return");
+      return;
+    }
     const newRep: Report = {
       ...reportData,
       id: `rep-${Date.now()}`,
@@ -1023,7 +1218,10 @@ export default function App() {
       createdAt: new Date().toISOString(),
       status: 'pending'
     };
+    console.log("Before setState");
     setReports((prev) => [newRep, ...prev]);
+    console.log("After setState");
+    console.log("Before return");
   };
 
   const executeUpdateProductStatus = async (productId: string, status: 'active' | 'hidden' | 'sold' | 'expired', reason: string = '') => {
@@ -1314,9 +1512,11 @@ export default function App() {
       const buyerNotif: Notification = {
         id: `delivered-${orderId}`,
         userId: order.buyerId,
+        recipient_id: order.buyerId,
+        audience: 'specific',
         type: 'order',
         title: 'قام التاجر بتأكيد تسليم طلبك',
-        body: 'هل استلمت المنتج بالفعل؟',
+        message: 'هل استلمت المنتج بالفعل؟',
         createdAt: new Date().toISOString(),
         read: false
       };
@@ -1333,9 +1533,11 @@ export default function App() {
       const sellerNotif: Notification = {
         id: `notif-seller-${Date.now()}`,
         userId: sellerId,
+        recipient_id: sellerId,
+        audience: 'specific',
         type: 'review',
         title: `تقييم جديد لمتجرك بـ ${extraData.sellerRating} نجوم ⭐`,
-        body: `قام العضو ${buyerName} بتقييم متجرك بـ ${extraData.sellerRating} نجوم. التعليق: "${extraData.ratingComment || 'لا يوجد تعليق'}"`,
+        message: `قام العضو ${buyerName} بتقييم متجرك بـ ${extraData.sellerRating} نجوم. التعليق: "${extraData.ratingComment || 'لا يوجد تعليق'}"`,
         createdAt: new Date().toISOString(),
         read: false
       };
@@ -1344,9 +1546,11 @@ export default function App() {
       const productNotif: Notification = extraData.productRating ? {
         id: `notif-product-${Date.now()}`,
         userId: sellerId,
+        recipient_id: sellerId,
+        audience: 'specific',
         type: 'review',
         title: `تقييم جديد لمنتجك بـ ${extraData.productRating} نجوم ⭐`,
-        body: `قام العضو ${buyerName} بتقييم منتجك "${order.productTitle}" بـ ${extraData.productRating} نجوم. التعليق: "${extraData.ratingComment || 'لا يوجد تعليق'}"`,
+        message: `قام العضو ${buyerName} بتقييم منتجك "${order.productTitle}" بـ ${extraData.productRating} نجوم. التعليق: "${extraData.ratingComment || 'لا يوجد تعليق'}"`,
         createdAt: new Date().toISOString(),
         read: false
       } : null;
@@ -1424,9 +1628,11 @@ export default function App() {
     const sysNotif: Notification = {
       id: 'notif-contrib-' + Date.now(),
       userId: currentUser.id,
+      recipient_id: currentUser.id,
+      audience: 'specific',
       type: 'system',
       title: 'تم استلام طلب المساهمة! 💚',
-      body: 'نشكرك جزيل الشكر على دعمك ومبادرتك الكريمة. يقوم مشرفو فيلوريا الآن بمراجعة التحويل المالي وسنقوم بإخطارك فور اعتماده.',
+      message: 'نشكرك جزيل الشكر على دعمك ومبادرتك الكريمة. يقوم مشرفو فيلوريا الآن بمراجعة التحويل المالي وسنقوم بإخطارك فور اعتماده.',
       createdAt: new Date().toISOString(),
       read: false
     };
@@ -1471,22 +1677,24 @@ export default function App() {
       const targetUserId = targetContrib.user_id;
       const timestamp = new Date().toISOString();
       let notifTitle = '';
-      let notifBody = '';
+      let notifMessage = '';
 
       if (action === 'Completed') {
         notifTitle = 'شكراً لك على دعم فيلوريا! 💚';
-        notifBody = `Thank you 💚\n\nYour contribution has been received successfully.\n\nYour support helps improve VELORIA and add new features for everyone.`;
+        notifMessage = `Thank you 💚\n\nYour contribution has been received successfully.\n\nYour support helps improve VELORIA and add new features for everyone.`;
       } else {
         notifTitle = 'فشل في تأكيد المساهمة ⚠️';
-        notifBody = `We could not verify your contribution because no payment was received.\n\nIf you believe this is an error, please contact VELORIA Support.`;
+        notifMessage = `We could not verify your contribution because no payment was received.\n\nIf you believe this is an error, please contact VELORIA Support.`;
       }
 
       const reviewNotif: Notification = {
         id: 'notif-review-' + Date.now(),
         userId: targetUserId,
+        recipient_id: targetUserId,
+        audience: 'specific',
         type: 'system',
         title: notifTitle,
-        body: notifBody,
+        message: notifMessage,
         createdAt: timestamp,
         read: false
       };
@@ -1535,6 +1743,7 @@ export default function App() {
   // Auto-prompt rules effect for Contribution Popups
   useEffect(() => {
     if (!currentUser) return;
+    if (appSettings.donationEnabled === false) return;
 
     // Successful transactions count where current user is buyer or seller
     const completedCount = orders.filter(
@@ -1618,9 +1827,11 @@ export default function App() {
     const newNotif: Notification = {
       id: `notif-${Date.now()}`,
       userId: storeId,
+      recipient_id: storeId,
+      audience: 'specific',
       type: 'system',
       title: '⏳ تم إرسال طلب توثيق متجرك بنجاح',
-      body: 'نشكرك على تقديم طلب توثيق متجرك في منصة فيلوريا الحرة. سيقوم فريق الإشراف بمراجعة طلبك ومطابقته للشروط بأقرب وقت ممكن.',
+      message: 'نشكرك على تقديم طلب توثيق متجرك في منصة فيلوريا الحرة. سيقوم فريق الإشراف بمراجعة طلبك ومطابقته للشروط بأقرب وقت ممكن.',
       createdAt: new Date().toISOString(),
       read: false
     };
@@ -1636,13 +1847,13 @@ export default function App() {
 
         // Create status change notification for the store owner
         let title = '';
-        let body = '';
+        let notifMsg = '';
         if (status === 'reviewed') {
           title = '✔️ تمت المراجعة الأولية لطلب التوثيق الخاص بك';
-          body = 'لقد وافق المشرفون على طلب توثيق متجرك مبدئياً. تم تصعيد طلبك الآن إلى إدارة المنصة للموافقة النهائية ومنح الشارة.';
+          notifMsg = 'لقد وافق المشرفون على طلب توثيق متجرك مبدئياً. تم تصعيد طلبك الآن إلى إدارة المنصة للموافقة النهائية ومنح الشارة.';
         } else if (status === 'approved') {
           title = '🎉 مبارك! تم توثيق متجرك رسمياً ✔️';
-          body = 'لقد تمت الموافقة النهائية على طلب توثيق متجرك من قبل الإدارة. تم منحك شارة التوثيق الرسمية وعلامة التوثيق المعتمدة لتظهر بجانب اسم متجرك لجميع زوار المنصة!';
+          notifMsg = 'لقد تمت الموافقة النهائية على طلب توثيق متجرك من قبل الإدارة. تم منحك شارة التوثيق الرسمية وعلامة التوثيق المعتمدة لتظهر بجانب اسم متجرك لجميع زوار المنصة!';
           
           // Also update user's badges to include 'verified'
           setUsers(prevUsers => prevUsers.map(u => {
@@ -1662,16 +1873,18 @@ export default function App() {
           }));
         } else if (status === 'rejected') {
           title = '❌ عذراً، تم رفض طلب توثيق متجرك';
-          body = `تمت مراجعة طلب توثيق متجرك ولم تتم الموافقة عليه للسبب التالي: "${rejectionReason || 'عدم استيفاء الشروط'}"\nيمكنك معالجة السبب وإعادة التقديم بكل سهولة.`;
+          notifMsg = `تمت مراجعة طلب توثيق متجرك ولم تتم الموافقة عليه للسبب التالي: "${rejectionReason || 'عدم استيفاء الشروط'}"\nيمكنك معالجة السبب وإعادة التقديم بكل سهولة.`;
         }
 
-        if (title && body) {
+        if (title && notifMsg) {
           const newNotif: Notification = {
             id: `notif-${Date.now()}-${Math.random()}`,
             userId: r.storeId,
+            recipient_id: r.storeId,
+            audience: 'specific',
             type: status === 'approved' ? 'admin' : 'system',
             title,
-            body,
+            message: notifMsg,
             createdAt: new Date().toISOString(),
             read: false
           };
@@ -1725,10 +1938,64 @@ export default function App() {
     return savedProd;
   };
 
-  const handleAddCategory = (categoryData: Omit<Category, 'id'>) => {
+  const handleAddCategory = async (categoryData: Omit<Category, 'id'>) => {
+    // 1- Before sending insert request to Supabase
+    console.log("1- قبل إرسال طلب insert إلى Supabase.");
+
+    const dataToSend = {
+      name: categoryData.name,
+      icon: categoryData.icon,
+      is_active: true
+    };
+
+    // 2- Print the data that will be sent
+    console.log("2- البيانات التي سيتم إرسالها:", dataToSend);
+
+    let savedId = `cat-${Date.now()}`;
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const response = await supabase
+          .from('categories')
+          .insert(dataToSend)
+          .select();
+
+        // 3- Print the full Supabase response
+        console.log("3- نتيجة Supabase كاملة:", response);
+
+        // 4- Print status and statusText if they exist
+        console.log("4- status:", response.status, "| statusText:", response.statusText);
+
+        // 5- Print the number of affected rows
+        const affectedRows = response.data ? response.data.length : 0;
+        console.log("5- عدد الصفوف المتأثرة:", affectedRows);
+
+        // 6- If error exists, print error details
+        if (response.error) {
+          console.log("6- تفاصيل الخطأ (error):", {
+            code: response.error.code,
+            message: response.error.message,
+            details: response.error.details,
+            hint: response.error.hint
+          });
+        }
+
+        if (response.data && response.data.length > 0) {
+          savedId = String(response.data[0].id);
+        }
+      } catch (err: any) {
+        console.error("Exception during categories insert:", err);
+      }
+    } else {
+      console.log("Supabase is not configured, category added to local state only.");
+    }
+
     const newCat: Category = {
-      ...categoryData,
-      id: `cat-${Date.now()}`
+      id: savedId,
+      name: categoryData.name,
+      icon: categoryData.icon,
+      is_active: true,
+      isActive: true
     };
     setCategories((prev) => [...prev, newCat]);
   };
@@ -1742,9 +2009,11 @@ export default function App() {
       const reviewNotif: Notification = {
         id: `notif-${Date.now()}`,
         userId: targetProduct.sellerId,
+        recipient_id: targetProduct.sellerId,
+        audience: 'specific',
         type: 'review',
         title: `تقييم جديد بـ ${rating} نجوم ⭐`,
-        body: `قام العضو ${currentUser.name} بإضافة تقييم لمنتجك "${targetProduct.title}": "${comment.length > 50 ? comment.substring(0, 50) + '...' : comment}"`,
+        message: `قام العضو ${currentUser.name} بإضافة تقييم لمنتجك "${targetProduct.title}": "${comment.length > 50 ? comment.substring(0, 50) + '...' : comment}"`,
         createdAt: new Date().toISOString(),
         read: false
       };
@@ -1774,7 +2043,7 @@ export default function App() {
   };
 
   // Filters logic - now fully delegating to Supabase queries
-  const filteredProducts = products;
+  const filteredProducts = visibleProducts;
 
   const isAdvancedFilteringActive = 
     filterPriceMin !== '' || 
@@ -1787,7 +2056,13 @@ export default function App() {
         isOpen={isMenuOpen}
         onClose={() => setIsMenuOpen(false)}
         currentUser={currentUser}
-        onOpenContribution={() => setIsContributionModalOpen(true)}
+        onOpenContribution={() => {
+          if (appSettings.donationEnabled === false) {
+            alert('ميزة المساهمة غير متاحة حالياً.');
+            return;
+          }
+          setIsContributionModalOpen(true);
+        }}
         onNavigate={(view) => {
           navigateTo(view, view === 'profile' ? currentUser : null);
         }}
@@ -1804,7 +2079,7 @@ export default function App() {
       {/* Primary Navigation Header */}
       <Navbar
         currentUser={currentUser}
-        categories={categories}
+        categories={activeCategories}
         activeCategoryId={activeCategoryId}
         onSelectCategory={(id) => {
           setActiveCategoryId(id);
@@ -1815,7 +2090,16 @@ export default function App() {
         isDarkMode={isDarkMode}
         onToggleDarkMode={() => setIsDarkMode(!isDarkMode)}
         onOpenNotifications={() => navigateTo('notifications')}
-        unreadNotificationsCount={notifications.filter((n) => currentUser && n.userId === currentUser.id && !n.read).length}
+        unreadNotificationsCount={notifications.filter((n) => {
+          if (n.read || n.is_read) return false;
+          if (!currentUser) return false;
+          const recId = n.recipient_id || n.recipientId || (n.userId !== 'all' ? n.userId : undefined);
+          if (recId) {
+            return String(recId) === String(currentUser.id);
+          }
+          if (n.audience === 'verified') return currentUser.badges?.includes('verified');
+          return !n.audience || n.audience === 'all';
+        }).length}
         orders={orders}
         onOpenSellerDashboard={() => navigateTo('seller-dashboard')}
         favoritesCount={favorites.length}
@@ -1828,6 +2112,58 @@ export default function App() {
         settings={appSettings}
         showSearchAndCategories={currentView === 'market' && activeMarketTab === 'all'}
       />
+
+      {/* Announcement Banner Bar (directly below Navbar) */}
+      {(() => {
+        if (!appSettings.announcementEnabled) return null;
+        if (!appSettings.announcementContent || !appSettings.announcementContent.trim()) return null;
+
+        // Expiry check
+        if (appSettings.announcementExpiry) {
+          const expiryDate = new Date(appSettings.announcementExpiry);
+          if (!isNaN(expiryDate.getTime()) && new Date() > expiryDate) {
+            return null;
+          }
+        }
+
+        const bannerBgClass = 
+          appSettings.announcementColor === 'rose'
+            ? 'bg-rose-600 text-white border-rose-700'
+            : appSettings.announcementColor === 'indigo'
+            ? 'bg-indigo-600 text-white border-indigo-700'
+            : appSettings.announcementColor === 'emerald'
+            ? 'bg-emerald-600 text-white border-emerald-700'
+            : appSettings.announcementColor === 'slate'
+            ? 'bg-slate-800 text-white border-slate-700'
+            : 'bg-amber-500 text-slate-950 border-amber-600';
+
+        return (
+          <div className={`w-full border-b shadow-xs transition-all duration-300 ${bannerBgClass} font-sans z-30 relative`} dir="rtl">
+            <div className="max-w-7xl mx-auto px-4 py-2.5 flex items-start sm:items-center gap-3 text-right">
+              <div className="p-1.5 bg-black/10 rounded-xl shrink-0 mt-0.5 sm:mt-0">
+                <Megaphone className="w-4 h-4 sm:w-5 sm:h-5" />
+              </div>
+              <div className="flex-1 flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-4">
+                <div className="space-y-0.5">
+                  {appSettings.announcementTitle && (
+                    <h4 className="font-black text-xs sm:text-sm leading-snug">
+                      {appSettings.announcementTitle}
+                    </h4>
+                  )}
+                  <p className="text-[11px] sm:text-xs font-semibold opacity-90 leading-relaxed">
+                    {appSettings.announcementContent}
+                  </p>
+                </div>
+                {appSettings.announcementExpiry && (
+                  <span className="shrink-0 text-[10px] bg-black/15 px-2 py-0.5 rounded-lg font-mono self-start sm:self-auto">
+                    ينتهي: {appSettings.announcementExpiry}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Dynamic Back Button Indicator */}
       {viewHistory.length > 0 && (
@@ -1973,7 +2309,57 @@ export default function App() {
 
       {/* Main Viewport Content */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 font-sans">
-        {currentUser && (currentUser.status === 'suspended' || currentUser.status === 'banned') ? (
+        {appSettings.maintenanceModeEnabled && 
+         currentUser?.role !== 'admin' && 
+         currentUser?.role !== 'moderator' && 
+         currentView !== 'login' && 
+         currentView !== 'register' && 
+         currentView !== 'reset-password' ? (
+          <div className="max-w-lg mx-auto text-center py-16 px-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-xl space-y-6 text-right rtl">
+            <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-500 mx-auto flex items-center justify-center text-3xl shadow-xs">
+              🔧
+            </div>
+            
+            <div className="space-y-2 text-center">
+              <h1 className="text-xl font-black text-slate-900 dark:text-white">المنصة تحت الصيانة</h1>
+              <p className="text-xs text-amber-600 dark:text-amber-400 font-bold leading-relaxed">
+                نعمل حالياً على تحسين المنصة وسنعود للعمل بأقرب وقت.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-150 dark:border-slate-850 text-right text-xs space-y-3">
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 block mb-1">سبب الصيانة:</span>
+                <p className="text-slate-700 dark:text-slate-200 font-bold leading-relaxed whitespace-pre-line">
+                  {appSettings.maintenanceReason || 'يتم حالياً إجراء تحديثات على الخوادم وتحسين أداء المنصة...'}
+                </p>
+              </div>
+
+              <div className="border-t border-slate-200/60 dark:border-slate-800 pt-2.5 flex items-center justify-between">
+                <span className="text-[10px] font-bold text-slate-400">وقت العودة المتوقع:</span>
+                <span className="font-extrabold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-lg">
+                  {appSettings.maintenanceReturnTime || 'خلال ساعتين'}
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-400 text-center font-medium">
+              شكراً لتفهمكم وصبركم معنا 🙏
+            </p>
+
+            {!currentUser && (
+              <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => setCurrentView('login')}
+                  className="text-xs font-bold text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300 hover:underline cursor-pointer"
+                >
+                  تسجيل الدخول للمسؤولين والأعضاء
+                </button>
+              </div>
+            )}
+          </div>
+        ) : currentUser && (currentUser.status === 'suspended' || currentUser.status === 'banned') ? (
           <div className="max-w-md mx-auto text-center py-16 px-6 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 rounded-3xl shadow-xl space-y-6 text-right rtl">
             <div className="w-16 h-16 bg-rose-500/10 text-rose-600 rounded-full flex items-center justify-center mx-auto border border-rose-500/20">
               <ShieldAlert className="w-8 h-8" />
@@ -2044,7 +2430,7 @@ export default function App() {
               <div className="grid grid-cols-2 gap-4 shrink-0 bg-white dark:bg-slate-950 p-4 rounded-2xl border border-slate-200 dark:border-slate-800">
                 <div className="text-center">
                   <span className="text-xl font-black text-emerald-600 dark:text-emerald-400">
-                    {products.filter((p) => p.status === 'active' || p.status === 'sold').length}
+                    {visibleProducts.filter((p) => p.status === 'active' || p.status === 'sold').length}
                   </span>
                   <p className="text-[9px] text-slate-500 dark:text-slate-400 mt-0.5">المنتجات (نشطة ومباعة)</p>
                 </div>
@@ -2062,8 +2448,8 @@ export default function App() {
                   <div className="text-right">
                     <span className="text-xs text-slate-400 font-bold">المنتجات المعروضة:</span>
                     <span className="text-xs font-black text-amber-500 mr-1.5">
-                      {products.filter((p) => p.status === 'active').length} نشط 
-                      {products.filter((p) => p.status === 'sold').length > 0 && ` (${products.filter((p) => p.status === 'sold').length} مباع)`}
+                      {visibleProducts.filter((p) => p.status === 'active').length} نشط 
+                      {visibleProducts.filter((p) => p.status === 'sold').length > 0 && ` (${visibleProducts.filter((p) => p.status === 'sold').length} مباع)`}
                     </span>
                   </div>
                   {isLoadingProducts && (
@@ -2236,50 +2622,74 @@ export default function App() {
                       <div className="flex items-center justify-between">
                         <button
                           onClick={() => setCurrentView('shops')}
-                          className="text-xs text-amber-600 dark:text-amber-400 hover:underline font-bold"
+                          className="text-xs text-amber-600 dark:text-amber-400 hover:underline font-bold cursor-pointer"
                         >
                           تصفح دليل المتاجر كاملة ←
                         </button>
                         <h3 className="text-sm font-black text-slate-850 dark:text-white flex items-center gap-2">
-                          متاجر مقترحة وموثوقة
+                          المتاجر المقترحة
                           <Store className="w-4.5 h-4.5 text-amber-500" />
                         </h3>
                       </div>
                       
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                        {users.slice(0, 3).map((seller) => {
-                          const sellerProdsCount = products.filter(p => p.sellerId === seller.id).length;
+                      {(() => {
+                        const featuredStores = users.filter((u) => u.is_featured === true || u.isFeatured === true);
+                        console.log('[DIAGNOSTIC] Featured stores on Home Page load (is_featured === true):',
+                          featuredStores.map(u => ({
+                            id: u.id,
+                            name: u.name,
+                            is_featured: u.is_featured ?? u.isFeatured
+                          }))
+                        );
+                        if (featuredStores.length === 0) {
                           return (
-                            <div 
-                              key={seller.id}
-                              className="p-5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850/80 rounded-2xl hover:border-amber-500/20 transition-all flex items-center justify-between gap-4"
-                            >
-                              <div className="flex items-center gap-3">
-                                <img src={seller.avatar} className="w-12 h-12 rounded-full object-cover shrink-0 border border-slate-100 dark:border-slate-800" />
-                                <div className="space-y-1 text-right">
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <h4 className="font-extrabold text-xs text-slate-800 dark:text-slate-100">{seller.name}</h4>
-                                    {seller.badges.includes('verified') && (
-                                      <span className="text-[9px] bg-emerald-500/10 text-emerald-500 px-1.5 py-0.2 rounded-full font-bold">موثوق</span>
-                                    )}
-                                  </div>
-                                  <p className="text-[10px] text-slate-400">المنتجات النشطة: {sellerProdsCount} إعلان</p>
-                                  <div className="text-[10px] text-amber-500 font-bold">⭐ {seller.ratingAverage || '4.9'} ({seller.ratingsCount || '15'})</div>
-                                </div>
-                              </div>
-                              <button
-                                onClick={() => {
-                                  setSelectedProfileUser(seller);
-                                  setCurrentView('profile');
-                                }}
-                                className="text-[10px] font-black bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-xl cursor-pointer shrink-0 transition-colors"
-                              >
-                                زيارة المتجر
-                              </button>
+                            <div className="p-6 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 rounded-2xl text-center text-xs text-slate-400 font-bold">
+                              لا توجد متاجر مثبتة في قائمة المقترحة حالياً
                             </div>
                           );
-                        })}
-                      </div>
+                        }
+
+                        return (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                            {featuredStores.map((seller) => {
+                              const sellerProdsCount = visibleProducts.filter(p => p.sellerId === seller.id).length;
+                              const isVerified = seller.badges.includes('verified');
+                              const hasRating = seller.ratingAverage > 0;
+                              return (
+                                <div 
+                                  key={seller.id}
+                                  className="p-5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850/80 rounded-2xl hover:border-amber-500/20 transition-all flex items-center justify-between gap-4"
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <img src={seller.avatar} className="w-12 h-12 rounded-full object-cover shrink-0 border border-slate-100 dark:border-slate-800" />
+                                    <div className="space-y-1 text-right">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <h4 className="font-extrabold text-xs text-slate-800 dark:text-slate-100">{seller.name}</h4>
+                                        {isVerified && (
+                                          <span className="text-[9px] bg-emerald-500/10 text-emerald-500 px-1.5 py-0.2 rounded-full font-bold">موثوق</span>
+                                        )}
+                                      </div>
+                                      <p className="text-[10px] text-slate-400">المنتجات النشطة: {sellerProdsCount} إعلان</p>
+                                      <div className="text-[10px] text-amber-500 font-bold">
+                                        {hasRating ? `⭐ ${seller.ratingAverage} (${seller.ratingsCount || 0})` : 'لا يوجد تقييم بعد'}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <button
+                                    onClick={() => {
+                                      setSelectedProfileUser(seller);
+                                      setCurrentView('profile');
+                                    }}
+                                    className="text-[10px] font-black bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-xl cursor-pointer shrink-0 transition-colors"
+                                  >
+                                    زيارة المتجر
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     {/* 2. All Active Products Section (سوق فيلوريا العام) */}
@@ -2292,13 +2702,13 @@ export default function App() {
                         </h3>
                       </div>
 
-                      {products.length === 0 ? (
+                      {visibleProducts.length === 0 ? (
                         <div className="p-12 text-center bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-slate-400 text-xs">
                           لا توجد منتجات نشطة حالياً في السوق.
                         </div>
                       ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                          {products.map((prod) => (
+                          {visibleProducts.map((prod) => (
                             <ProductCard
                               key={`market-all-${prod.id}`}
                               product={prod}
@@ -2327,13 +2737,13 @@ export default function App() {
                       </h3>
                     </div>
 
-                    {products.length === 0 ? (
+                    {visibleProducts.length === 0 ? (
                       <div className="p-12 text-center bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-slate-400 text-xs">
                         لا توجد منتجات نشطة حالياً.
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                        {products.map((prod) => (
+                        {visibleProducts.map((prod) => (
                           <ProductCard
                             key={`tab-rated-${prod.id}`}
                             product={prod}
@@ -2361,13 +2771,13 @@ export default function App() {
                       </h3>
                     </div>
 
-                    {products.length === 0 ? (
+                    {visibleProducts.length === 0 ? (
                       <div className="p-12 text-center bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-slate-400 text-xs">
                         لا توجد منتجات نشطة حالياً.
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                        {products.map((prod) => (
+                        {visibleProducts.map((prod) => (
                           <ProductCard
                             key={`tab-newest-${prod.id}`}
                             product={prod}
@@ -2395,13 +2805,13 @@ export default function App() {
                       </h3>
                     </div>
 
-                    {products.length === 0 ? (
+                    {visibleProducts.length === 0 ? (
                       <div className="p-12 text-center bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-slate-400 text-xs">
                         لا توجد منتجات نشطة حالياً.
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                        {products.map((prod) => (
+                        {visibleProducts.map((prod) => (
                           <ProductCard
                             key={`tab-most-viewed-${prod.id}`}
                             product={prod}
@@ -2426,12 +2836,12 @@ export default function App() {
         {/* VIEW 2: Categories view listing */}
         {currentView === 'categories' && (
           <CategoriesView
-            categories={categories}
+            categories={activeCategories}
             onSelectCategory={(id) => {
               setActiveCategoryId(id);
               setCurrentView('market');
             }}
-            productsCountByCategory={(catId) => allActiveProducts.filter((p) => p.categoryId === catId).length}
+            productsCountByCategory={(catId) => visibleAllActiveProducts.filter((p) => String(p.categoryId) === String(catId) || p.categoryId === catId || (typeof p.categoryId === 'string' && p.categoryId.replace('cat-', '') === String(catId).replace('cat-', ''))).length}
           />
         )}
 
@@ -2439,7 +2849,7 @@ export default function App() {
         {currentView === 'shops' && (
           <ShopsView
             users={users}
-            products={allActiveProducts}
+            products={visibleAllActiveProducts}
             currentUser={currentUser}
             onFollow={handleToggleFollow}
             followedSellers={followedSellers}
@@ -2456,8 +2866,8 @@ export default function App() {
         {/* VIEW 4: Search View */}
         {currentView === 'search' && (
           <SearchView
-            products={products}
-            categories={categories}
+            products={visibleProducts}
+            categories={activeCategories}
             users={users}
             currentUser={currentUser}
             favorites={favorites}
@@ -2472,7 +2882,7 @@ export default function App() {
         {/* VIEW 5: Add Product Form */}
         {currentView === 'add-product' && (
           <AddProductView
-            categories={categories}
+            categories={activeCategories}
             currentUser={currentUser}
             onAddProduct={async (productData) => {
               await handleAddProduct(productData);
@@ -2485,7 +2895,7 @@ export default function App() {
         {currentView === 'profile' && (
           <ProfileView
             profileUser={selectedProfileUser || currentUser || users[0]}
-            products={products}
+            products={visibleProducts}
             currentUser={currentUser}
             onFollow={handleToggleFollow}
             followedSellers={followedSellers}
@@ -2539,7 +2949,7 @@ export default function App() {
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                {products.filter(p => favorites.includes(p.id)).map(prod => (
+                {visibleProducts.filter(p => favorites.includes(p.id)).map(prod => (
                   <ProductCard
                     key={prod.id}
                     product={prod}
@@ -2569,7 +2979,7 @@ export default function App() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {users.filter(u => followedSellers.includes(u.id)).map(seller => {
-                  const sellerProdsCount = products.filter(p => p.sellerId === seller.id).length;
+                  const sellerProdsCount = visibleProducts.filter(p => p.sellerId === seller.id).length;
                   return (
                     <div 
                       key={seller.id} 
@@ -2603,11 +3013,15 @@ export default function App() {
         {/* VIEW 10: Notifications feed */}
         {currentView === 'notifications' && (
           <NotificationsView
-            notifications={notifications.filter(n => n.userId === (currentUser?.id || 'visitor'))}
+            notifications={notifications}
             onMarkAllAsRead={() => {
               const currentUserId = currentUser?.id || 'visitor';
               setNotifications(prev =>
-                prev.map(n => n.userId === currentUserId ? { ...n, read: true } : n)
+                prev.map(n => {
+                  const recipientId = n.recipient_id || n.recipientId || n.userId;
+                  if (n.audience === 'specific' && recipientId !== currentUserId && n.userId !== currentUserId) return n;
+                  return { ...n, read: true, is_read: true };
+                })
               );
             }}
             orders={orders}
@@ -2638,7 +3052,13 @@ export default function App() {
           <LoginView
             onLogin={(user) => {
               setCurrentUser(user);
-              setCurrentView('market');
+              if (user.role === 'admin') {
+                setCurrentView('admin-panel');
+              } else if (user.role === 'moderator') {
+                setCurrentView('moderator-panel');
+              } else {
+                setCurrentView('market');
+              }
             }}
             onNavigateToRegister={() => {
               setCurrentView('register');
@@ -2718,7 +3138,7 @@ export default function App() {
               currentUser={currentUser}
               onUpdateUser={handleUpdateUser}
               products={products}
-              categories={categories}
+              categories={activeCategories}
               orders={orders}
               onAddProduct={handleAddProduct}
               onUpdateProductStatus={handleUpdateProductStatus}
@@ -2749,9 +3169,11 @@ export default function App() {
               setUsers={setUsers}
               setProducts={setProducts}
               setReports={setReports}
+              setNotifications={setNotifications}
               verificationRequests={verificationRequests}
               onUpdateVerificationStatus={handleUpdateVerificationStatus}
               users={users}
+              onSelectSeller={(seller) => navigateTo('profile', seller)}
             />
           </div>
         )}
@@ -2801,21 +3223,115 @@ export default function App() {
             />
           </div>
         )}
+        {/* VIEW 17: Direct Donation/Support Page */}
+        {(currentView === 'donations' || currentView === 'donate' || currentView === 'support' || currentView === 'contribution') && (
+          <div className="max-w-md mx-auto text-center py-16 px-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-xl space-y-4 text-right rtl">
+            <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 text-emerald-500 mx-auto flex items-center justify-center text-3xl shadow-xs">
+              💚
+            </div>
+            {appSettings.donationEnabled === false ? (
+              <div className="space-y-2 text-center">
+                <h2 className="text-lg font-black text-slate-800 dark:text-white">
+                  ميزة المساهمة غير متاحة حالياً.
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  تم إيقاف استقبال المساهمات والتبرعات مؤقتاً من قبل إدارة المنصة.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3 text-center">
+                <h2 className="text-lg font-black text-slate-800 dark:text-white">
+                  المساهمة ودعم منصة {appSettings.platformName || 'فيلوريا'}
+                </h2>
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                  {appSettings.donationMessage || 'هل ساعدتك منصة فيلوريا في إتمام صفقتك بنجاح؟ مساهمتك الاختيارية تعزز استقرار المنصة وتطورها.'}
+                </p>
+                <button
+                  onClick={() => setIsContributionModalOpen(true)}
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-xs shadow-md cursor-pointer transition-colors"
+                >
+                  تقديم مساهمة الآن عبر شام كاش
+                </button>
+              </div>
+            )}
+            <div className="pt-2 flex justify-center">
+              <button
+                onClick={() => setCurrentView('market')}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs cursor-pointer transition-colors"
+              >
+                العودة للرئيسية
+              </button>
+            </div>
+          </div>
+        )}
           </>
         )}
       </main>
 
       {/* Floating Footer Philosophy */}
       <footer className="bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800/80 py-8 px-4 text-center mt-12 text-xs text-slate-400 leading-relaxed shrink-0 font-sans">
-        <div className="max-w-7xl mx-auto space-y-3">
+        <div className="max-w-7xl mx-auto space-y-4">
           <p className="font-extrabold text-slate-700 dark:text-slate-300">
-            🛡️ فيلوريا (VELORIA) — منصة ربط حر ومفتوح بين البائع والمشتري
+            🛡️ {appSettings.platformName || 'فيلوريا (VELORIA)'} — منصة ربط حر ومفتوح بين البائع والمشتري
           </p>
           <p className="max-w-2xl mx-auto">
-            تعتمد المنصة على السمعة والثقة وبناء علاقات تجارية صحيحة ومتبادلة. لا يتم خصم أي عمولات على عمليات البيع، ولا تتدخل المنصة في آليات الدفع أو التوصيل أو تتبع الشحنات حفاظاً على اللامركزية وتخفيف التكاليف عن أصحاب المهن اليدوية والمشاريع المنزلية.
+            {appSettings.platformDescription || 'تعتمد المنصة على السمعة والثقة وبناء علاقات تجارية صحيحة ومتبادلة. لا يتم خصم أي عمولات على عمليات البيع، ولا تتدخل المنصة في آليات الدفع أو التوصيل أو تتبع الشحنات حفاظاً على اللامركزية وتخفيف التكاليف عن أصحاب المهن اليدوية والمشاريع المنزلية.'}
           </p>
-          <div className="text-[10px] text-amber-500 font-bold">
-            جميع الحقوق محفوظة © {new Date().getFullYear()} VELORIA
+
+          {/* Social Media Links in Footer */}
+          {(() => {
+            const formatUrl = (url?: string) => {
+              if (!url) return '';
+              const trimmed = url.trim();
+              if (!trimmed) return '';
+              if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
+              if (trimmed.startsWith('@')) return `https://t.me/${trimmed.substring(1)}`;
+              return `https://${trimmed}`;
+            };
+
+            const links = [
+              { key: 'fb', name: 'Facebook', url: formatUrl(appSettings.socialFacebook || appSettings.facebookPage), icon: (
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M22 12c0-5.523-4.477-10-10-10S2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.878v-6.987h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.988C18.343 21.128 22 16.991 22 12z"/></svg>
+              )},
+              { key: 'insta', name: 'Instagram', url: formatUrl(appSettings.socialInstagram || appSettings.instagramPage), icon: (
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
+              )},
+              { key: 'tg', name: 'Telegram', url: formatUrl(appSettings.socialTelegram || appSettings.telegramLink), icon: (
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69.01-.03.01-.14-.07-.2-.08-.06-.19-.04-.27-.02-.12.02-1.96 1.25-5.54 3.67-.52.36-1 .54-1.43.53-.47-.01-1.37-.27-2.04-.49-.82-.27-1.47-.42-1.42-.88.03-.24.37-.49 1.02-.75 3.99-1.73 6.66-2.87 8.01-3.43 3.81-1.58 4.6-1.86 5.12-1.87.11 0 .37.03.54.17.14.12.18.28.2.4.02.07.03.22.01.35z"/></svg>
+              )},
+              { key: 'yt', name: 'Youtube', url: formatUrl(appSettings.socialYoutube), icon: (
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+              )},
+              { key: 'tt', name: 'TikTok', url: formatUrl(appSettings.socialTiktok), icon: (
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.82.56-1.31 1.56-1.28 2.55.02.83.43 1.64 1.11 2.1.84.58 1.97.62 2.87.16.81-.4 1.37-1.22 1.47-2.12.08-2.86.04-5.73.04-8.59V.02z"/></svg>
+              )},
+              { key: 'x', name: 'X', url: formatUrl(appSettings.socialX), icon: (
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+              )}
+            ].filter(item => Boolean(item.url));
+
+            if (links.length === 0) return null;
+
+            return (
+              <div className="flex items-center justify-center gap-3 pt-2">
+                {links.map(item => (
+                  <a
+                    key={item.key}
+                    href={item.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={item.name}
+                    className="p-2.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-amber-500 hover:bg-amber-500/10 transition-all cursor-pointer shadow-2xs"
+                  >
+                    {item.icon}
+                  </a>
+                ))}
+              </div>
+            );
+          })()}
+
+          <div className="text-[10px] text-amber-500 font-bold border-t border-slate-100 dark:border-slate-800/60 pt-3">
+            {appSettings.copyrightText || `جميع الحقوق محفوظة © ${new Date().getFullYear()} ${appSettings.platformName || 'VELORIA'}`}
           </div>
         </div>
       </footer>
@@ -2851,12 +3367,14 @@ export default function App() {
       )}
 
       {/* MODAL: Contribution system popup */}
-      {isContributionModalOpen && (
+      {isContributionModalOpen && appSettings.donationEnabled !== false && (
         <ContributionModal
           isOpen={isContributionModalOpen}
           onClose={() => setIsContributionModalOpen(false)}
           onConfirmTransfer={handleConfirmTransfer}
-          accountNumber={shamCashAccount}
+          accountNumber={appSettings.donationShamCashId || appSettings.shamCashAccount || shamCashAccount}
+          instructions={appSettings.donationInstructions}
+          donationMessage={appSettings.donationMessage}
         />
       )}
 

@@ -235,10 +235,32 @@ export default function ProductDetailsModal({
     setTimeout(() => setChatSuccess(false), 3000);
   };
 
+  const handleReportClick = () => {
+    console.log("Report button clicked");
+    console.log("Entered report handler");
+    console.log("Before opening report modal");
+    console.log("After opening report modal");
+    console.log("Before setState");
+    setShowReportForm(!showReportForm);
+    console.log("After setState");
+    console.log("Before return");
+  };
+
   const submitReport = (e: React.FormEvent) => {
+    console.log("Report button clicked");
+    console.log("Entered report handler");
+    console.log("Before opening report modal");
+    console.log("After opening report modal");
     e.preventDefault();
-    if (!currentUser) return;
-    if (reportDetails.trim() === '') return;
+    if (!currentUser) {
+      console.log("Before return");
+      return;
+    }
+    if (reportDetails.trim() === '') {
+      console.log("Before return");
+      return;
+    }
+    console.log("Before setState");
     onSendReport({
       type: 'product',
       targetId: product.id,
@@ -252,6 +274,8 @@ export default function ProductDetailsModal({
       setReportSubmitted(false);
       setShowReportForm(false);
     }, 3000);
+    console.log("After setState");
+    console.log("Before return");
   };
 
   const renderSellerBadge = (badge: UserBadge) => {
@@ -290,6 +314,22 @@ export default function ProductDetailsModal({
   // Simulated premium custom shop styling
   const hasPremiumStyle = seller?.isPremium && seller.premiumConfig;
   const premiumStyles = hasPremiumStyle ? seller.premiumConfig : null;
+
+  // Diagnostics for Report Modal/Form requested by user
+  console.log("==========================================");
+  console.log("1. هل يتم Render للمكون أصلاً؟: نعم، يتم عمل Render لمكون تفاصيل المنتج المسؤول عن الإبلاغ (ProductDetailsModal)");
+  console.log("2. قيمة isOpen أثناء كل Render: (نافذة التفاصيل مفتوحة دائماً عند رندرة هذا المكون، وحالة نموذج الإبلاغ showReportForm هي):", showReportForm);
+  console.log("3. قيمة selectedProduct (المنتج المحدد):", product);
+  console.log("4. قيمة reportTarget (الهدف المراد الإبلاغ عنه):", product ? { id: product.id, title: product.title, type: 'product' } : null);
+  console.log("5. هل يوجد أي شرط return null يمنع ظهور الـ Modal؟: لا يوجد أي شرط return null في هذا المكون يمنع ظهوره.");
+  console.log("6. هل الـ Modal موجود داخل JSX الرئيسي للتطبيق أم غير مضمّن؟: نعم، المكون مضمن داخل JSX الرئيسي في App.tsx تحت الشرط {selectedProduct && <ProductDetailsModal ... />}");
+  console.log("7. أسماء الـ className الخاصة بعنصر النموذج: \"mt-3 p-4 bg-rose-500/5 rounded-xl border border-rose-500/10 space-y-3\"");
+  console.log("8. قيمة style الخاصة به إن وجدت: لا يوجد style مباشر (inline styles)، يتم الاعتماد كلياً على فئات Tailwind CSS.");
+  console.log("9. الـ z-index النهائي للنموذج: يرث z-index للمودال الأب وهو z-50.");
+  console.log("10. الـ position النهائي للنموذج: العنصر نفسه ذو موضع عادي (static/relative)، بينما الحاوية الكبرى للمودال هي fixed inset-0.");
+  console.log("11. هل العنصر موجود داخل عنصر يحمل overflow:hidden أو overflow:auto؟: نعم، الحاوية الأب (المودال) تحمل overflow-y-auto، بينما البطاقة الداخلية الحاضنة تحمل overflow-hidden لمنع خروج العناصر.");
+  console.log("12. هل النموذج يستخدم Dialog, Modal, Sheet, Portal, Popover؟: يتم عرضه كـ 'Modal/Dialog' تقليدي مدمج في الـ DOM ولا يستخدم Portal.");
+  console.log("==========================================");
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4">
@@ -495,9 +535,12 @@ export default function ProductDetailsModal({
                                 onClose();
                               }
                             }}
-                            className="font-bold text-slate-800 dark:text-slate-200 text-xs truncate cursor-pointer hover:text-amber-500 hover:underline transition-all"
+                            className="font-bold text-slate-800 dark:text-slate-200 text-xs truncate cursor-pointer hover:text-amber-500 hover:underline transition-all flex items-center gap-1"
                           >
-                            {seller.name}
+                            <span>{seller.name}</span>
+                            {seller.badges.includes('verified') && (
+                              <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 inline-block shrink-0" title="متجر موثق ✔️" />
+                            )}
                           </h4>
                         </div>
                         <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
@@ -584,7 +627,7 @@ export default function ProductDetailsModal({
 
                   {currentUser && !isOwnProduct && (
                     <button
-                      onClick={() => setShowReportForm(!showReportForm)}
+                      onClick={handleReportClick}
                       className="text-[10px] text-rose-500 hover:text-rose-600 font-bold flex items-center gap-1 cursor-pointer"
                     >
                       <AlertTriangle className="w-3.5 h-3.5" />
@@ -594,8 +637,17 @@ export default function ProductDetailsModal({
                 </div>
 
                 {/* Report Form Drawer */}
+                {(() => {
+                  console.log("--- BEFORE condition: {showReportForm && (...)} ---");
+                  console.log("قيمة showReportForm قبل الشرط مباشرة:", showReportForm);
+                  return null;
+                })()}
                 {showReportForm && (
                   <form onSubmit={submitReport} className="mt-3 p-4 bg-rose-500/5 rounded-xl border border-rose-500/10 space-y-3">
+                    {(() => {
+                      console.log("REPORT JSX RENDERED");
+                      return null;
+                    })()}
                     <h5 className="font-extrabold text-rose-600 dark:text-rose-400 text-xs flex items-center gap-1">
                       <ShieldAlert className="w-4 h-4" />
                       الإبلاغ عن محتوى أو سلوك مخالف
@@ -633,6 +685,10 @@ export default function ProductDetailsModal({
                     </button>
                   </form>
                 )}
+                {(() => {
+                  console.log("--- AFTER condition: {showReportForm && (...)} ---");
+                  return null;
+                })()}
               </div>
             )}
 

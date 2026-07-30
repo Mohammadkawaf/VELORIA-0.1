@@ -34,12 +34,16 @@ export interface User {
   trustLevel?: string; // e.g. "مستوى برونزي", "مستوى ذهبي", "موثوق جداً"
   status?: 'active' | 'suspended' | 'banned' | 'deactivated';
   lastUsernameChangeDate?: string;
+  is_featured?: boolean;
+  isFeatured?: boolean;
 }
 
 export interface Category {
   id: string;
   name: string;
   icon: string; // Lucide icon name string
+  is_active?: boolean;
+  isActive?: boolean;
 }
 
 export interface Product {
@@ -113,19 +117,30 @@ export interface Report {
   reporterName: string;
   reason: string;
   details: string;
-  status: 'pending' | 'resolved' | 'dismissed';
+  status: 'pending' | 'processing' | 'resolved' | 'dismissed';
   createdAt: string;
 }
 
 export interface Notification {
   id: string;
-  userId: string;
+  userId?: string;
+  user_id?: string;
+  sender_id?: string;
+  senderId?: string;
+  recipient_id?: string;
+  recipientId?: string;
+  audience?: 'specific' | 'verified' | 'all' | string;
   type: 'order' | 'follow' | 'review' | 'system' | 'contribution' | 'admin' | 'announcement';
   title: string;
-  body: string;
+  message?: string;
+  body?: string;
+  reference_id?: string;
+  referenceId?: string;
+  link?: string;
   createdAt: string;
   created_at?: string;
   read: boolean;
+  is_read?: boolean;
 }
 
 export interface Contribution {
@@ -183,6 +198,7 @@ export interface AppSettings {
 
   // Donation settings
   shamCashAccount: string;
+  donationShamCashId?: string;
   donationInstructions: string;
   donationMessage: string;
   donationEnabled: boolean;
@@ -191,6 +207,7 @@ export interface AppSettings {
   privacyPolicy: string;
   termsOfUse: string;
   disclaimer: string;
+  disclaimerText?: string;
 
   // Homepage announcement
   announcementEnabled: boolean;
@@ -201,6 +218,8 @@ export interface AppSettings {
 
   // Maintenance mode
   maintenanceModeEnabled: boolean;
+  maintenanceReason?: string;
+  maintenanceReturnTime?: string;
 
   // Social media
   socialFacebook: string;
@@ -217,6 +236,7 @@ export interface ProductFilterOptions {
   searchTerm?: string | null;
   sortBy?: string;
   productIds?: string[];
+  includeHiddenCategories?: boolean;
   
   // Future extendable filters
   priceMin?: number | null;
@@ -228,6 +248,25 @@ export interface ProductFilterOptions {
   condition?: string | null;
   delivery?: boolean | null;
   currency?: string | null;
+}
+
+export interface MaintenanceLog {
+  id: string;
+  adminName: string;
+  actionType: 'تفعيل' | 'إلغاء';
+  reason: string;
+  returnTime?: string;
+  createdAt: string;
+}
+
+export interface AnnouncementLog {
+  id: string;
+  adminName: string;
+  title: string;
+  content: string;
+  enabled: boolean;
+  color: string;
+  createdAt: string;
 }
 
 

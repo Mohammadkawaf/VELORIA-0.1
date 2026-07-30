@@ -30,8 +30,8 @@ export default function ShopsView({
   const featuredSellers = sellers.filter((s) => s.badges.includes('featured_seller'));
   const officialStores = sellers.filter((s) => s.badges.includes('official_store'));
 
-  // Suggested stores (Premium or highest rating first)
-  const suggestedSellers = [...sellers].sort((a, b) => b.ratingAverage - a.ratingAverage);
+  // Suggested stores (featured by admin via is_featured)
+  const suggestedSellers = sellers.filter((s) => s.is_featured === true || s.isFeatured === true);
 
   const getProductsCount = (sellerId: string) => {
     return products.filter((p) => p.sellerId === sellerId && (p.status === 'active' || p.status === 'sold')).length;
@@ -206,12 +206,18 @@ export default function ShopsView({
       <div className="space-y-3">
         <h3 className="font-extrabold text-sm text-slate-800 dark:text-slate-200 flex items-center gap-2">
           <Sparkles className="w-4.5 h-4.5 text-amber-500 animate-pulse" />
-          متاجر مقترحة وموصى بها بالسوق:
+          المتاجر المقترحة:
         </h3>
-        <p className="text-[10px] text-slate-400">متاجر تتميز بنشاطها المستمر، وتقييماتها الإيجابية الفائقة وثقة المشترين المتبادلة.</p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-1">
-          {suggestedSellers.slice(0, 3).map((seller) => renderSellerCard(seller))}
-        </div>
+        <p className="text-[10px] text-slate-400">متاجر مميزة تم اختيارها وتثبيتها من قبل إدارة المنصة بالواجهة الرئيسية.</p>
+        {suggestedSellers.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-1">
+            {suggestedSellers.map((seller) => renderSellerCard(seller))}
+          </div>
+        ) : (
+          <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-800 text-center text-xs text-slate-400 font-bold">
+            لا توجد متاجر مقترحة مثبتة حالياً
+          </div>
+        )}
       </div>
 
       {/* All Verified and Listed Shops */}

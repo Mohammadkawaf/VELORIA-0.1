@@ -88,7 +88,9 @@ export const DEFAULT_USERS: User[] = [
     phone: '0501111111',
     whatsapp_number: '966501111111',
     salesCount: 68,
-    trustLevel: 'بائع ذهبي موثوق'
+    trustLevel: 'بائع ذهبي موثوق',
+    is_featured: true,
+    isFeatured: true
   },
   {
     id: 'seller-2',

@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { Product, User, Category, Order, Review, Message, Report, AppSettings, ProductFilterOptions } from '../types';
+import { Product, User, Category, Order, Review, Message, Report, AppSettings, ProductFilterOptions, Notification, MaintenanceLog, AnnouncementLog } from '../types';
 
 // Retrieve environment variables
 const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || '';
@@ -44,8 +44,71 @@ export function mapProfileToUser(p: any, authEmail?: string): User {
     role: p.role || 'user',
     joinedAt: p.created_at ? p.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
     coverImage: p.cover_url || p.cover_image || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&h=300&q=80',
-    badges: (p.user_badges || []).map((ub: any) => ub.badges?.name).filter(Boolean) as any[]
+    badges: (p.user_badges || []).map((ub: any) => ub.badges?.name).filter(Boolean) as any[],
+    is_featured: p.is_featured === true,
+    isFeatured: p.is_featured === true
   };
+}
+
+// Local storage helpers for maintenance and announcement logs
+function getLocalMaintenanceLogs(): MaintenanceLog[] {
+  try {
+    const raw = localStorage.getItem('veloria_maintenance_history');
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  return [];
+}
+
+function saveLocalMaintenanceLog(log: MaintenanceLog) {
+  try {
+    const current = getLocalMaintenanceLogs();
+    const updated = [log, ...current.filter(l => l.id !== log.id)];
+    localStorage.setItem('veloria_maintenance_history', JSON.stringify(updated));
+  } catch (e) {}
+}
+
+function deleteLocalMaintenanceLog(id: string) {
+  try {
+    const current = getLocalMaintenanceLogs();
+    const updated = current.filter(l => l.id !== id);
+    localStorage.setItem('veloria_maintenance_history', JSON.stringify(updated));
+  } catch (e) {}
+}
+
+function clearLocalMaintenanceLogs() {
+  try {
+    localStorage.removeItem('veloria_maintenance_history');
+  } catch (e) {}
+}
+
+function getLocalAnnouncementLogs(): AnnouncementLog[] {
+  try {
+    const raw = localStorage.getItem('veloria_announcement_history');
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  return [];
+}
+
+function saveLocalAnnouncementLog(log: AnnouncementLog) {
+  try {
+    const current = getLocalAnnouncementLogs();
+    const updated = [log, ...current.filter(l => l.id !== log.id)];
+    localStorage.setItem('veloria_announcement_history', JSON.stringify(updated));
+  } catch (e) {}
+}
+
+function deleteLocalAnnouncementLog(id: string) {
+  try {
+    const current = getLocalAnnouncementLogs();
+    const updated = current.filter(l => l.id !== id);
+    localStorage.setItem('veloria_announcement_history', JSON.stringify(updated));
+  } catch (e) {}
+}
+
+function clearLocalAnnouncementLogs() {
+  try {
+    localStorage.removeItem('veloria_announcement_history');
+  } catch (e) {}
 }
 
 // Helper methods with transparent fallbacks to local storage
@@ -334,8 +397,13 @@ export const supabaseService = {
       .from('products')
       .select(`
         *,
-        product_images(*)
+        product_images(*),
+        categories!inner(is_active)
       `);
+
+    if (!options?.includeHiddenCategories) {
+      query = query.eq('categories.is_active', true);
+    }
 
     // 1. Filter by Status (by default we query all, but we can filter specifically)
     if (options?.status) {
@@ -652,38 +720,143 @@ export const supabaseService = {
     }
   },
 
-  // Follows
+  // Followers
   async getFollowedSellers(userId: string): Promise<string[]> {
-    if (!supabase) return [];
-    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
-    if (!isUUID) return [];
-    const { data, error } = await supabase
-      .from('follows')
-      .select('following_id')
-      .eq('follower_id', userId);
+    console.log('[Followers DB Diagnostic] Starting followers request...');
+    console.log('[Followers DB Diagnostic] VITE_SUPABASE_URL:', (import.meta as any).env?.VITE_SUPABASE_URL || supabaseUrl);
+    console.log('[Followers DB Diagnostic] Supabase Client Initialized:', Boolean(supabase));
+    console.log('[Followers DB Diagnostic] userId:', userId);
+    console.log('[Followers DB Diagnostic] Time:', new Date().toISOString());
+    console.log('[Followers DB Diagnostic] Table:', 'followers');
 
-    if (error) throw error;
-    return (data || []).map((f: any) => f.following_id);
+    if (!supabase) {
+      console.warn('[Followers DB Diagnostic] Supabase client is null');
+      return [];
+    }
+
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
+    if (!isUUID) {
+      console.warn('[Followers DB Diagnostic] userId is not a valid UUID:', userId);
+      return [];
+    }
+
+    console.log('[Followers DB] Fetching followed sellers from followers table for follower_id:', userId);
+
+    try {
+      const { data, error } = await supabase
+        .from('followers')
+        .select('following_id')
+        .eq('follower_id', userId);
+
+      if (error) {
+        console.error('[Followers DB Diagnostic] Supabase Error detected:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          navigatorOnline: typeof navigator !== 'undefined' ? navigator.onLine : undefined,
+          origin: typeof window !== 'undefined' ? window.location.origin : undefined,
+          errorType: 'Supabase Error'
+        });
+        throw error;
+      }
+
+      const followedIds = (data || []).map((f: any) => f.following_id);
+      console.log('[Followers DB] Followed sellers loaded from DB:', followedIds);
+      return followedIds;
+    } catch (err: any) {
+      const isNetworkError = err instanceof TypeError || err?.name === 'TypeError' || err?.message?.includes('Failed to fetch');
+      console.error('[Followers DB Diagnostic] Request failed:', {
+        isNetworkError,
+        errorType: err?.name || typeof err,
+        errorMessage: err?.message || String(err),
+        stack: err?.stack,
+        navigatorOnline: typeof navigator !== 'undefined' ? navigator.onLine : undefined,
+        origin: typeof window !== 'undefined' ? window.location.origin : undefined,
+        code: err?.code,
+        details: err?.details,
+        hint: err?.hint,
+        category: isNetworkError ? 'Network Error' : (err?.code ? 'Supabase Error' : 'Unknown Error')
+      });
+      throw err;
+    }
   },
 
-  async toggleFollow(followerId: string, followingId: string, isFollowing: boolean): Promise<void> {
+  async toggleFollow(followerId: string, followingId: string, shouldFollow: boolean): Promise<void> {
     if (!supabase) return;
     const isFollowerUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(followerId);
     const isFollowingUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(followingId);
-    if (!isFollowerUUID || !isFollowingUUID) return;
-    if (isFollowing) {
-      const { error } = await supabase
-        .from('follows')
-        .insert({ follower_id: followerId, following_id: followingId });
-      if (error && error.code !== '23505') throw error;
+    if (!isFollowerUUID || !isFollowingUUID) {
+      console.warn('[Followers DB] Skipping DB toggleFollow because IDs are not valid UUIDs:', { followerId, followingId });
+      return;
+    }
+
+    if (shouldFollow) {
+      console.log('[Followers DB] BEFORE INSERT into followers table:', { follower_id: followerId, following_id: followingId });
+      const { data, error } = await supabase
+        .from('followers')
+        .insert({ follower_id: followerId, following_id: followingId })
+        .select();
+
+      if (error && error.code !== '23505') {
+        console.error('[Followers DB] INSERT error in followers table:', error);
+        throw error;
+      }
+      console.log('[Followers DB] AFTER INSERT into followers table successful:', data);
     } else {
+      console.log('[Followers DB] BEFORE DELETE from followers table:', { follower_id: followerId, following_id: followingId });
       const { error } = await supabase
-        .from('follows')
+        .from('followers')
         .delete()
         .eq('follower_id', followerId)
         .eq('following_id', followingId);
-      if (error) throw error;
+
+      if (error) {
+        console.error('[Followers DB] DELETE error in followers table:', error);
+        throw error;
+      }
+      console.log('[Followers DB] AFTER DELETE from followers table successful.');
     }
+  },
+
+  async getFollowersCount(followingId: string): Promise<number> {
+    if (!supabase) return 0;
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(followingId);
+    if (!isUUID) return 0;
+    console.log('[Followers DB] Fetching followers count for following_id:', followingId);
+    const { count, error } = await supabase
+      .from('followers')
+      .select('*', { count: 'exact', head: true })
+      .eq('following_id', followingId);
+
+    if (error) {
+      console.error('[Followers DB] Error counting followers:', error);
+      return 0;
+    }
+    const finalCount = count ?? 0;
+    console.log(`[Followers DB] Followers count for ${followingId} is: ${finalCount}`);
+    return finalCount;
+  },
+
+  async getAllFollowersCounts(): Promise<Record<string, number>> {
+    if (!supabase) return {};
+    console.log('[Followers DB] Fetching all followers to compute followers counts...');
+    const { data, error } = await supabase
+      .from('followers')
+      .select('following_id');
+
+    if (error) {
+      console.error('[Followers DB] Error fetching all followers:', error);
+      return {};
+    }
+    const counts: Record<string, number> = {};
+    (data || []).forEach((row: any) => {
+      if (row.following_id) {
+        counts[row.following_id] = (counts[row.following_id] || 0) + 1;
+      }
+    });
+    console.log('[Followers DB] All store followers counts computed:', counts);
+    return counts;
   },
 
   // Orders
@@ -851,7 +1024,9 @@ export const supabaseService = {
       return (data || []).map((c: any) => ({
         id: String(c.id),
         name: c.name,
-        icon: c.icon || 'MoreHorizontal'
+        icon: c.icon || 'MoreHorizontal',
+        is_active: c.is_active !== false,
+        isActive: c.is_active !== false
       }));
     } catch (err) {
       console.warn('Failed to fetch categories:', err);
@@ -861,28 +1036,142 @@ export const supabaseService = {
 
   // App Settings
   async getAppSettings(): Promise<AppSettings> {
-    const cached = localStorage.getItem('veloria-app-settings');
-    let settings = cached ? JSON.parse(cached) : defaultAppSettings;
+    let settings: AppSettings = { ...defaultAppSettings };
 
     if (!supabase || !isSupabaseConfigured) {
       return settings;
     }
 
     try {
+      // Fetch the first record from application_settings
       const { data, error } = await supabase
         .from('application_settings')
-        .select('value')
-        .eq('id', 'global')
-        .maybeSingle();
+        .select('*')
+        .limit(1);
 
       if (error) {
-        console.warn('Could not load settings from Supabase (may need table creation):', error.message);
+        console.warn('Could not load settings from application_settings table:', error.message);
         return settings;
       }
 
-      if (data && data.value) {
-        settings = { ...defaultAppSettings, ...data.value };
-        localStorage.setItem('veloria-app-settings', JSON.stringify(settings));
+      if (data && data.length > 0) {
+        const row = data[0];
+
+        // Map branding fields directly from DB columns
+        if (row.platform_name !== undefined && row.platform_name !== null) {
+          settings.platformName = String(row.platform_name);
+        }
+        if (row.platform_logo !== undefined && row.platform_logo !== null) {
+          settings.platformLogo = String(row.platform_logo);
+        }
+        if (row.platform_description !== undefined && row.platform_description !== null) {
+          settings.platformDescription = String(row.platform_description);
+        }
+        if (row.current_version !== undefined && row.current_version !== null) {
+          settings.currentVersion = String(row.current_version);
+        }
+        if (row.copyright_text !== undefined && row.copyright_text !== null) {
+          settings.copyrightText = String(row.copyright_text);
+        }
+        if (row.website_url !== undefined && row.website_url !== null) {
+          settings.websiteUrl = String(row.website_url);
+        }
+
+        // Map maintenance and announcement fields directly from DB columns
+        if (row.maintenance_mode !== undefined && row.maintenance_mode !== null) {
+          settings.maintenanceModeEnabled = Boolean(
+            row.maintenance_mode === true ||
+            row.maintenance_mode === 'true' ||
+            row.maintenance_mode === 1
+          );
+        }
+
+        if (row.maintenance_reason !== undefined && row.maintenance_reason !== null) {
+          settings.maintenanceReason = String(row.maintenance_reason);
+        }
+
+        if (row.maintenance_return_time !== undefined && row.maintenance_return_time !== null) {
+          settings.maintenanceReturnTime = String(row.maintenance_return_time);
+        }
+
+        if (row.announcement_enabled !== undefined && row.announcement_enabled !== null) {
+          settings.announcementEnabled = Boolean(
+            row.announcement_enabled === true ||
+            row.announcement_enabled === 'true' ||
+            row.announcement_enabled === 1
+          );
+        }
+
+        if (row.announcement_text !== undefined && row.announcement_text !== null) {
+          settings.announcementContent = String(row.announcement_text);
+        }
+
+        // Map donation settings
+        if (row.donations_enabled !== undefined && row.donations_enabled !== null) {
+          settings.donationEnabled = Boolean(
+            row.donations_enabled === true ||
+            row.donations_enabled === 'true' ||
+            row.donations_enabled === 1
+          );
+        }
+
+        if (row.donation_shamcash_id !== undefined && row.donation_shamcash_id !== null) {
+          settings.donationShamCashId = String(row.donation_shamcash_id);
+          settings.shamCashAccount = String(row.donation_shamcash_id);
+        }
+
+        if (row.donation_message !== undefined && row.donation_message !== null) {
+          settings.donationMessage = String(row.donation_message);
+        }
+
+        if (row.donation_instructions !== undefined && row.donation_instructions !== null) {
+          settings.donationInstructions = String(row.donation_instructions);
+        }
+
+        // Map legal pages content
+        if (row.disclaimer_text !== undefined && row.disclaimer_text !== null) {
+          settings.disclaimerText = String(row.disclaimer_text);
+          settings.disclaimer = String(row.disclaimer_text);
+        }
+
+        if (row.terms_of_use !== undefined && row.terms_of_use !== null) {
+          settings.termsOfUse = String(row.terms_of_use);
+        }
+
+        if (row.privacy_policy !== undefined && row.privacy_policy !== null) {
+          settings.privacyPolicy = String(row.privacy_policy);
+        }
+
+        // Map social media links from official DB columns
+        if (row.facebook_page !== undefined && row.facebook_page !== null) {
+          settings.socialFacebook = String(row.facebook_page);
+        }
+        if (row.instagram_page !== undefined && row.instagram_page !== null) {
+          settings.socialInstagram = String(row.instagram_page);
+        }
+        if (row.telegram_link !== undefined && row.telegram_link !== null) {
+          settings.socialTelegram = String(row.telegram_link);
+        }
+        if (row.youtube_channel !== undefined && row.youtube_channel !== null) {
+          settings.socialYoutube = String(row.youtube_channel);
+        }
+        if (row.tiktok_page !== undefined && row.tiktok_page !== null) {
+          settings.socialTiktok = String(row.tiktok_page);
+        }
+        if (row.x_page !== undefined && row.x_page !== null) {
+          settings.socialX = String(row.x_page);
+        }
+
+        console.log('[AppSettings] Loaded Settings from DB', {
+          platform_name: settings.platformName,
+          donations_enabled: settings.donationEnabled,
+          socialFacebook: settings.socialFacebook,
+          socialInstagram: settings.socialInstagram,
+          socialTelegram: settings.socialTelegram,
+          socialYoutube: settings.socialYoutube,
+          socialTiktok: settings.socialTiktok,
+          socialX: settings.socialX
+        });
       }
     } catch (err: any) {
       console.warn('Error loading settings from Supabase:', err.message);
@@ -892,24 +1181,296 @@ export const supabaseService = {
   },
 
   async updateAppSettings(settings: AppSettings): Promise<void> {
-    localStorage.setItem('veloria-app-settings', JSON.stringify(settings));
-
     if (!supabase || !isSupabaseConfigured) {
       return;
     }
 
     try {
-      const { error } = await supabase
+      // Fetch existing first record to update
+      const { data: existingRows } = await supabase
         .from('application_settings')
-        .upsert({ id: 'global', value: settings, updated_at: new Date().toISOString() });
+        .select('*')
+        .limit(1);
 
-      if (error) {
-        console.warn('Error saving settings to Supabase (may need table creation):', error.message);
-        throw error;
+      const payload: Record<string, any> = {
+        platform_name: settings.platformName || '',
+        platform_logo: settings.platformLogo || '',
+        platform_description: settings.platformDescription || '',
+        current_version: settings.currentVersion || '',
+        copyright_text: settings.copyrightText || '',
+        website_url: settings.websiteUrl || '',
+        maintenance_mode: Boolean(settings.maintenanceModeEnabled),
+        maintenance_reason: settings.maintenanceReason || '',
+        maintenance_return_time: settings.maintenanceReturnTime || '',
+        announcement_enabled: Boolean(settings.announcementEnabled),
+        announcement_text: settings.announcementContent || settings.announcementTitle || '',
+        donations_enabled: Boolean(settings.donationEnabled),
+        donation_shamcash_id: settings.donationShamCashId || settings.shamCashAccount || '',
+        donation_message: settings.donationMessage || '',
+        donation_instructions: settings.donationInstructions || '',
+        disclaimer_text: settings.disclaimerText || settings.disclaimer || '',
+        terms_of_use: settings.termsOfUse || '',
+        privacy_policy: settings.privacyPolicy || '',
+        facebook_page: settings.socialFacebook || settings.facebookPage || '',
+        instagram_page: settings.socialInstagram || settings.instagramPage || '',
+        telegram_link: settings.socialTelegram || settings.telegramLink || '',
+        youtube_channel: settings.socialYoutube || '',
+        tiktok_page: settings.socialTiktok || '',
+        x_page: settings.socialX || '',
+        updated_at: new Date().toISOString()
+      };
+
+      console.log('[Branding] BEFORE UPDATE', {
+        platform_name: payload.platform_name,
+        platform_logo: payload.platform_logo,
+        platform_description: payload.platform_description,
+        current_version: payload.current_version,
+        copyright_text: payload.copyright_text,
+        website_url: payload.website_url
+      });
+
+      if (existingRows && existingRows.length > 0) {
+        const firstRow = existingRows[0];
+        let updateQuery = supabase.from('application_settings').update(payload);
+        if (firstRow.id !== undefined && firstRow.id !== null) {
+          updateQuery = updateQuery.eq('id', firstRow.id);
+        }
+        const { error: updateError } = await updateQuery;
+        if (updateError) {
+          console.error('Error updating application_settings record:', updateError.message);
+          throw updateError;
+        }
+      } else {
+        const { error: insertError } = await supabase
+          .from('application_settings')
+          .insert([payload]);
+
+        if (insertError) {
+          console.error('Error inserting initial application_settings record:', insertError.message);
+          throw insertError;
+        }
       }
+
+      console.log('[Branding] AFTER UPDATE', {
+        platform_name: payload.platform_name,
+        platform_logo: payload.platform_logo,
+        platform_description: payload.platform_description,
+        current_version: payload.current_version,
+        copyright_text: payload.copyright_text,
+        website_url: payload.website_url
+      });
     } catch (err: any) {
       console.warn('Failed to update app settings in Supabase:', err.message);
       throw err;
+    }
+  },
+
+  // Maintenance Logs
+  async getMaintenanceLogs(): Promise<MaintenanceLog[]> {
+    if (!supabase || !isSupabaseConfigured) {
+      return getLocalMaintenanceLogs();
+    }
+    try {
+      const { data, error } = await supabase
+        .from('maintenance_history')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.warn('Could not fetch maintenance_history table:', error.message);
+        return getLocalMaintenanceLogs();
+      }
+
+      const fetched: MaintenanceLog[] = (data || []).map((row: any) => ({
+        id: String(row.id),
+        adminName: row.admin_name || 'المدير العام',
+        actionType: row.action_type || 'تفعيل',
+        reason: row.reason || '',
+        returnTime: row.return_time || '',
+        createdAt: row.created_at || new Date().toISOString()
+      }));
+
+      try {
+        localStorage.setItem('veloria_maintenance_history', JSON.stringify(fetched));
+      } catch (e) {}
+
+      return fetched;
+    } catch (err) {
+      return getLocalMaintenanceLogs();
+    }
+  },
+
+  async addMaintenanceLog(log: Omit<MaintenanceLog, 'id'>): Promise<MaintenanceLog> {
+    const tempId = 'maint_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+    const newLog: MaintenanceLog = {
+      id: tempId,
+      ...log
+    };
+
+    saveLocalMaintenanceLog(newLog);
+
+    if (!supabase || !isSupabaseConfigured) {
+      return newLog;
+    }
+
+    try {
+      const payload = {
+        admin_name: log.adminName,
+        action_type: log.actionType,
+        reason: log.reason,
+        return_time: log.returnTime || '',
+        created_at: log.createdAt || new Date().toISOString()
+      };
+
+      const { data, error } = await supabase
+        .from('maintenance_history')
+        .insert([payload])
+        .select();
+
+      if (!error && data && data.length > 0) {
+        const created: MaintenanceLog = {
+          id: String(data[0].id),
+          adminName: data[0].admin_name || log.adminName,
+          actionType: data[0].action_type || log.actionType,
+          reason: data[0].reason || log.reason,
+          returnTime: data[0].return_time || log.returnTime,
+          createdAt: data[0].created_at || log.createdAt
+        };
+        saveLocalMaintenanceLog(created);
+        return created;
+      }
+    } catch (err) {
+      console.warn('Could not save to maintenance_history DB table:', err);
+    }
+
+    return newLog;
+  },
+
+  async deleteMaintenanceLog(id: string): Promise<void> {
+    deleteLocalMaintenanceLog(id);
+    if (!supabase || !isSupabaseConfigured) return;
+
+    try {
+      await supabase.from('maintenance_history').delete().eq('id', id);
+    } catch (err) {
+      console.warn('Error deleting maintenance_history:', err);
+    }
+  },
+
+  async clearMaintenanceLogs(): Promise<void> {
+    clearLocalMaintenanceLogs();
+    if (!supabase || !isSupabaseConfigured) return;
+
+    try {
+      await supabase.from('maintenance_history').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    } catch (err) {
+      console.warn('Error clearing maintenance_history:', err);
+    }
+  },
+
+  // Announcement Logs
+  async getAnnouncementLogs(): Promise<AnnouncementLog[]> {
+    if (!supabase || !isSupabaseConfigured) {
+      return getLocalAnnouncementLogs();
+    }
+    try {
+      const { data, error } = await supabase
+        .from('announcement_history')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.warn('Could not fetch announcement_history table:', error.message);
+        return getLocalAnnouncementLogs();
+      }
+
+      const fetched: AnnouncementLog[] = (data || []).map((row: any) => ({
+        id: String(row.id),
+        adminName: row.admin_name || 'المدير العام',
+        title: row.title || '',
+        content: row.content || '',
+        enabled: row.enabled === true || row.enabled === 'true' || row.enabled === 1,
+        color: row.color || 'amber',
+        createdAt: row.created_at || new Date().toISOString()
+      }));
+
+      try {
+        localStorage.setItem('veloria_announcement_history', JSON.stringify(fetched));
+      } catch (e) {}
+
+      return fetched;
+    } catch (err) {
+      return getLocalAnnouncementLogs();
+    }
+  },
+
+  async addAnnouncementLog(log: Omit<AnnouncementLog, 'id'>): Promise<AnnouncementLog> {
+    const tempId = 'ann_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+    const newLog: AnnouncementLog = {
+      id: tempId,
+      ...log
+    };
+
+    saveLocalAnnouncementLog(newLog);
+
+    if (!supabase || !isSupabaseConfigured) {
+      return newLog;
+    }
+
+    try {
+      const payload = {
+        admin_name: log.adminName,
+        title: log.title,
+        content: log.content,
+        enabled: Boolean(log.enabled),
+        color: log.color,
+        created_at: log.createdAt || new Date().toISOString()
+      };
+
+      const { data, error } = await supabase
+        .from('announcement_history')
+        .insert([payload])
+        .select();
+
+      if (!error && data && data.length > 0) {
+        const created: AnnouncementLog = {
+          id: String(data[0].id),
+          adminName: data[0].admin_name || log.adminName,
+          title: data[0].title || log.title,
+          content: data[0].content || log.content,
+          enabled: data[0].enabled === true || data[0].enabled === 'true' || data[0].enabled === 1,
+          color: data[0].color || log.color,
+          createdAt: data[0].created_at || log.createdAt
+        };
+        saveLocalAnnouncementLog(created);
+        return created;
+      }
+    } catch (err) {
+      console.warn('Could not save to announcement_history DB table:', err);
+    }
+
+    return newLog;
+  },
+
+  async deleteAnnouncementLog(id: string): Promise<void> {
+    deleteLocalAnnouncementLog(id);
+    if (!supabase || !isSupabaseConfigured) return;
+
+    try {
+      await supabase.from('announcement_history').delete().eq('id', id);
+    } catch (err) {
+      console.warn('Error deleting announcement_history:', err);
+    }
+  },
+
+  async clearAnnouncementLogs(): Promise<void> {
+    clearLocalAnnouncementLogs();
+    if (!supabase || !isSupabaseConfigured) return;
+
+    try {
+      await supabase.from('announcement_history').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    } catch (err) {
+      console.warn('Error clearing announcement_history:', err);
     }
   },
 
@@ -1092,8 +1653,185 @@ export const supabaseService = {
       console.error('Failed to fetch all product ratings from database:', err);
       return [];
     }
+  },
+
+  async getNotifications(): Promise<Notification[]> {
+    if (!supabase || !isSupabaseConfigured) return [];
+    try {
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching notifications from Supabase:', error.message);
+        return [];
+      }
+
+      return (data || []).map((n: any) => ({
+        id: String(n.id),
+        userId: n.recipient_id || n.user_id || 'all',
+        senderId: n.sender_id,
+        recipientId: n.recipient_id,
+        sender_id: n.sender_id,
+        recipient_id: n.recipient_id,
+        audience: n.audience || (n.recipient_id ? 'specific' : 'all'),
+        type: n.type || 'system',
+        title: n.title || '',
+        message: n.message || n.body || '',
+        referenceId: n.reference_id,
+        link: n.link,
+        createdAt: n.created_at || new Date().toISOString(),
+        created_at: n.created_at || new Date().toISOString(),
+        read: n.is_read || false,
+        is_read: n.is_read || false
+      })) as Notification[];
+    } catch (err) {
+      console.error('Failed to fetch notifications from Supabase:', err);
+      return [];
+    }
+  },
+
+  async markNotificationAsRead(notifId: string): Promise<void> {
+    if (!supabase || !isSupabaseConfigured) return;
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('id', notifId);
+
+      if (error) {
+        console.warn('Error marking notification as read in Supabase:', error.message);
+      }
+    } catch (err) {
+      console.warn('Failed to mark notification as read:', err);
+    }
+  },
+
+  async markAllNotificationsAsReadForUser(userId: string): Promise<void> {
+    if (!supabase || !isSupabaseConfigured || !userId) return;
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('is_read', false)
+        .or(`recipient_id.eq.${userId},user_id.eq.${userId}`);
+
+      if (error) {
+        console.warn('Error marking all notifications as read in Supabase:', error.message);
+      }
+    } catch (err) {
+      console.warn('Failed to mark all notifications as read:', err);
+    }
+  },
+
+  // Activity Logs
+  async getActivityLogs(): Promise<any[]> {
+    if (!supabase || !isSupabaseConfigured) return [];
+    try {
+      const { data, error } = await supabase
+        .from('activity_logs')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.warn('Error fetching activity_logs from Supabase:', error.message);
+        return [];
+      }
+      return data || [];
+    } catch (err) {
+      console.warn('Failed to fetch activity_logs from Supabase:', err);
+      return [];
+    }
+  },
+
+  async addActivityLog(log: {
+    user_id?: string | null;
+    user_name: string;
+    user_email?: string;
+    user_role: string;
+    operation: string;
+    details?: string;
+    ip_address?: string | null;
+    user_agent?: string;
+    device_type?: string;
+    status?: string;
+    panel?: string;
+    target_type?: string | null;
+    target_id?: string | null;
+    target_name?: string | null;
+    target_user_id?: string | null;
+    target_user_email?: string | null;
+  }) {
+    if (!supabase || !isSupabaseConfigured) {
+      return null;
+    }
+    try {
+      const payload = {
+        user_id: log.user_id || null,
+        user_name: log.user_name,
+        user_email: log.user_email || '',
+        user_role: log.user_role,
+        operation: log.operation,
+        details: log.details || '',
+        ip_address: null,
+        user_agent: log.user_agent || (typeof navigator !== 'undefined' ? navigator.userAgent : ''),
+        device_type: log.device_type || getDeviceType(),
+        status: log.status || 'success',
+        panel: log.panel || 'Admin',
+        target_type: log.target_type || null,
+        target_id: log.target_id ? String(log.target_id) : null,
+        target_name: log.target_name || null,
+        target_user_id: log.target_user_id ? String(log.target_user_id) : null,
+        target_user_email: log.target_user_email || null,
+      };
+
+      const { data, error } = await supabase
+        .from('activity_logs')
+        .insert([payload])
+        .select('*');
+
+      if (error) {
+        console.warn('Error inserting activity log to Supabase:', error.message);
+        return null;
+      }
+      return data?.[0] || null;
+    } catch (err) {
+      console.warn('Failed to insert activity log to Supabase:', err);
+      return null;
+    }
+  },
+
+  async clearActivityLogs(): Promise<boolean> {
+    if (!supabase || !isSupabaseConfigured) return false;
+    try {
+      const { error } = await supabase
+        .from('activity_logs')
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000');
+
+      if (error) {
+        console.warn('Error clearing activity_logs in Supabase:', error.message);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.warn('Failed to clear activity_logs in Supabase:', err);
+      return false;
+    }
   }
 };
+
+export function getDeviceType(): 'Android' | 'iPhone' | 'Windows' | 'Mac' | 'Linux' | 'Unknown' {
+  if (typeof navigator === 'undefined' || !navigator.userAgent) return 'Unknown';
+  const ua = navigator.userAgent;
+  if (/Android/i.test(ua)) return 'Android';
+  if (/iPhone|iPad|iPod/i.test(ua)) return 'iPhone';
+  if (/Win/i.test(ua)) return 'Windows';
+  if (/Mac/i.test(ua)) return 'Mac';
+  if (/Linux/i.test(ua)) return 'Linux';
+  return 'Unknown';
+}
 
 export const defaultAppSettings: AppSettings = {
   // Contact info

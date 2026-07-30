@@ -45,6 +45,61 @@ export default function NotificationsView({
   const [cancellationReason, setCancellationReason] = useState<string>('');
   const [showCancellationSuccess, setShowCancellationSuccess] = useState<boolean>(false);
 
+  // Auto-mark notifications as read when NotificationsView mounts / opens
+  React.useEffect(() => {
+    const currentUserId = currentUser?.id || 'visitor';
+    if (!currentUserId) return;
+
+    const hasUnread = notifications.some(n => {
+      const recId = n.recipient_id || n.recipientId || (n.userId !== 'all' ? n.userId : undefined);
+      const isForUser = recId
+        ? String(recId) === String(currentUserId)
+        : ((!n.audience || n.audience === 'all') || (n.audience === 'verified' && currentUser?.badges?.includes('verified')));
+      return isForUser && !n.read && !n.is_read;
+    });
+
+    if (!hasUnread) return;
+
+    if (setNotifications) {
+      setNotifications(prev =>
+        prev.map(item => {
+          const recId = item.recipient_id || item.recipientId || (item.userId !== 'all' ? item.userId : undefined);
+          const isForUser = recId
+            ? String(recId) === String(currentUserId)
+            : ((!item.audience || item.audience === 'all') || (item.audience === 'verified' && currentUser?.badges?.includes('verified')));
+          if (isForUser && (!item.read || !item.is_read)) {
+            return { ...item, read: true, is_read: true };
+          }
+          return item;
+        })
+      );
+    }
+
+    const markReadInDb = async () => {
+      try {
+        const { supabaseService, isSupabaseConfigured } = await import('../lib/supabase');
+        if (isSupabaseConfigured) {
+          await supabaseService.markAllNotificationsAsReadForUser(currentUserId);
+        }
+      } catch (err) {
+        console.warn('Error auto marking notifications as read:', err);
+      }
+    };
+
+    markReadInDb();
+  }, [currentUser?.id, notifications]);
+
+  const handleNotificationClick = (n: Notification) => {
+    // Clicking on notification ONLY opens link if present, DOES NOT change read state
+    if (n.link) {
+      if (n.link.startsWith('http://') || n.link.startsWith('https://')) {
+        window.open(n.link, '_blank');
+      } else {
+        window.location.href = n.link;
+      }
+    }
+  };
+
   const getIcon = (type: Notification['type']) => {
     switch (type) {
       case 'order':
@@ -103,8 +158,31 @@ export default function NotificationsView({
     }
   };
 
+  // First filter notifications based on recipient_id and audience rules for currentUser
+  const userVisibleNotifications = notifications.filter(n => {
+    const recId = n.recipient_id || n.recipientId || (n.userId !== 'all' ? n.userId : undefined);
+    
+    // If this notification has a specific recipient_id / recipientId assigned
+    if (recId) {
+      if (!currentUser) return false;
+      return String(recId) === String(currentUser.id);
+    }
+
+    // Fallback if no recipient_id is attached to the record (e.g. global broadcast without individual user records)
+    const audience = n.audience || 'all';
+    if (audience === 'verified') {
+      if (!currentUser) return false;
+      return !!currentUser.badges?.includes('verified');
+    }
+    if (audience === 'all') {
+      return true;
+    }
+
+    return false;
+  });
+
   // Filter notifications based on tab
-  const filteredNotifications = [...notifications]
+  const filteredNotifications = [...userVisibleNotifications]
     .filter(n => {
       if (activeFilter === 'all') return true;
       if (activeFilter === 'admin') {
@@ -119,13 +197,13 @@ export default function NotificationsView({
     });
 
   const filterTabs: { id: FilterType; label: string; count: number }[] = [
-    { id: 'all', label: 'الكل', count: notifications.length },
-    { id: 'order', label: 'الطلبات', count: notifications.filter(n => n.type === 'order').length },
-    { id: 'follow', label: 'المتابعين', count: notifications.filter(n => n.type === 'follow').length },
-    { id: 'review', label: 'التقييمات', count: notifications.filter(n => n.type === 'review').length },
-    { id: 'contribution', label: 'المساهمات', count: notifications.filter(n => n.type === 'contribution').length },
-    { id: 'admin', label: 'الإدارة', count: notifications.filter(n => n.type === 'admin' || n.type === 'system').length },
-    { id: 'announcement', label: 'الإعلانات', count: notifications.filter(n => n.type === 'announcement').length },
+    { id: 'all', label: 'الكل', count: userVisibleNotifications.length },
+    { id: 'order', label: 'الطلبات', count: userVisibleNotifications.filter(n => n.type === 'order').length },
+    { id: 'follow', label: 'المتابعين', count: userVisibleNotifications.filter(n => n.type === 'follow').length },
+    { id: 'review', label: 'التقييمات', count: userVisibleNotifications.filter(n => n.type === 'review').length },
+    { id: 'contribution', label: 'المساهمات', count: userVisibleNotifications.filter(n => n.type === 'contribution').length },
+    { id: 'admin', label: 'الإدارة', count: userVisibleNotifications.filter(n => n.type === 'admin' || n.type === 'system').length },
+    { id: 'announcement', label: 'الإعلانات', count: userVisibleNotifications.filter(n => n.type === 'announcement').length },
   ];
 
   return (
@@ -145,7 +223,7 @@ export default function NotificationsView({
           </div>
         </div>
 
-        {notifications.some(n => !n.read) ? (
+        {notifications.some(n => !n.read && !n.is_read) ? (
           <button
             onClick={onMarkAllAsRead}
             className="text-[11px] text-amber-600 dark:text-amber-400 hover:text-amber-750 font-black cursor-pointer transition-all bg-amber-500/10 border border-amber-500/15 px-3 py-1.5 rounded-xl flex items-center gap-1"
@@ -196,10 +274,11 @@ export default function NotificationsView({
           {filteredNotifications.map((n) => (
             <div
               key={n.id}
-              className={`p-4 rounded-2xl border transition-all text-right flex gap-3.5 items-start ${
-                n.read
+              onClick={() => handleNotificationClick(n)}
+              className={`p-4 rounded-2xl border transition-all text-right flex gap-3.5 items-start cursor-pointer ${
+                n.read || n.is_read
                   ? 'bg-slate-50/50 dark:bg-slate-950/25 border-slate-100 dark:border-slate-850/60 opacity-80 hover:opacity-100'
-                  : 'bg-amber-500/5 border-amber-500/15 ring-1 ring-amber-500/10'
+                  : 'bg-amber-500/5 border-amber-500/15 ring-1 ring-amber-500/10 hover:border-amber-500/30'
               }`}
             >
               <div className="p-2.5 rounded-full bg-white dark:bg-slate-950 h-fit border border-slate-100 dark:border-slate-850 shrink-0 shadow-3xs">
@@ -224,7 +303,7 @@ export default function NotificationsView({
                     </h3>
                   </div>
                 </div>
-                <p className="text-[11px] text-slate-550 dark:text-slate-400 leading-relaxed pt-0.5">{n.body}</p>
+                <p className="text-[11px] text-slate-550 dark:text-slate-400 leading-relaxed pt-0.5">{n.message}</p>
                  {n.title === 'قام التاجر بتأكيد تسليم طلبك' && (() => {
                   const orderId = n.id.startsWith('delivered-') 
                     ? n.id.substring('delivered-'.length) 

@@ -71,6 +71,42 @@ export default function ProfileView({
     raw?: any;
   } | null>(null);
 
+  // Dynamic real followers count fetched directly from Supabase followers table
+  const [realFollowersCount, setRealFollowersCount] = useState<number | null>(null);
+
+  React.useEffect(() => {
+    let isMounted = true;
+    const fetchRealFollowersCount = async () => {
+      if (profileUser?.id) {
+        console.log(`[ProfileView] Executing getFollowersCount directly from Supabase followers table for storeId: ${profileUser.id}`);
+        try {
+          const count = await supabaseService.getFollowersCount(profileUser.id);
+          if (isMounted) {
+            console.log(`[ProfileView] Received getFollowersCount result for store ${profileUser.id}: ${count}`);
+            setRealFollowersCount(count);
+          }
+        } catch (err) {
+          console.error('[ProfileView] Error fetching followers count from Supabase:', err);
+        }
+      }
+    };
+
+    fetchRealFollowersCount();
+    return () => {
+      isMounted = false;
+    };
+  }, [profileUser?.id]);
+
+  // Keep live count updated if user toggles follow/unfollow button
+  React.useEffect(() => {
+    if (profileUser?.followersCount !== undefined) {
+      setRealFollowersCount(profileUser.followersCount);
+    }
+  }, [profileUser?.followersCount]);
+
+  // Rely solely on realFollowersCount from followers table (default to 0 while loading, never fallback to mock store objects)
+  const displayedFollowersCount = realFollowersCount !== null ? realFollowersCount : 0;
+
   const getWhatsAppLink = () => {
     let num = profileUser.whatsapp || profileUser.whatsapp_number || '';
     num = num.replace(/\D/g, '');
@@ -713,9 +749,17 @@ export default function ProfileView({
           {/* Sincerity Level */}
           <div className="p-3 bg-gradient-to-br from-slate-50 to-slate-100/50 dark:from-slate-950/40 dark:to-slate-900 rounded-2xl border border-slate-100 dark:border-slate-850/60 text-center space-y-1">
             <span className="text-[10px] text-slate-400 block font-bold">مستوى السمعة والثقة:</span>
-            <span className="text-xs font-black text-amber-600 dark:text-amber-450 flex items-center justify-center gap-1">
-              <Award className="w-4 h-4 text-amber-500" />
-              {profileUser.trustLevel || 'موثق بمستوى برونزي'}
+            <span className={`text-xs font-black flex items-center justify-center gap-1 ${
+              profileUser.badges.includes('verified')
+                ? 'text-emerald-600 dark:text-emerald-400'
+                : 'text-amber-600 dark:text-amber-450'
+            }`}>
+              {profileUser.badges.includes('verified') ? (
+                <ShieldCheck className="w-4 h-4 text-emerald-500" />
+              ) : (
+                <Award className="w-4 h-4 text-amber-500" />
+              )}
+              {profileUser.badges.includes('verified') ? 'متجر موثق' : (profileUser.trustLevel || 'موثق بمستوى برونزي')}
             </span>
           </div>
 
@@ -723,7 +767,7 @@ export default function ProfileView({
           <div className="p-3 bg-gradient-to-br from-slate-50 to-slate-100/50 dark:from-slate-950/40 dark:to-slate-900 rounded-2xl border border-slate-100 dark:border-slate-850/60 text-center space-y-1">
             <span className="text-[10px] text-slate-400 block font-bold">المتابعون النشطون:</span>
             <span className="text-xs font-black text-slate-800 dark:text-white">
-              {profileUser.followersCount} متابع
+              {displayedFollowersCount} متابع
             </span>
           </div>
 
@@ -759,105 +803,109 @@ export default function ProfileView({
           </div>
         </div>
 
-        {/* Store Verification Request section */}
-        {isOwnProfile && !isEditing && (() => {
-          const missing: string[] = [];
+        {/* Store Verification status or card */}
+        {profileUser.badges.includes('verified') ? (
+          <div className="p-5 bg-emerald-500/5 dark:bg-emerald-950/20 border border-emerald-500/20 rounded-3xl space-y-2 text-right">
+            <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-black text-sm">
+              <CheckCircle className="w-5 h-5 shrink-0 text-emerald-500" />
+              <span>✅ هذا المتجر موثق من إدارة VELORIA</span>
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed font-bold">
+              يحمل هذا المتجر شارة التوثيق الرسمية بعد مراجعة بياناته من إدارة المنصة، مما يزيد ثقة المشترين ويؤكد صحة بيانات المتجر.
+            </p>
+          </div>
+        ) : (
+          isOwnProfile && !isEditing && (() => {
+            const missing: string[] = [];
 
-          // Store name exists
-          if (!profileUser.name || profileUser.name.trim() === '') {
-            missing.push('تسمية المتجر أو الاسم الشخصي');
-          }
-          // Store description exists (bio)
-          if (!profileUser.bio || profileUser.bio.trim() === '') {
-            missing.push('نبذة تعريفية للمتجر (Bio)');
-          }
-          // Profile image uploaded (not default / empty)
-          if (!profileUser.avatar || profileUser.avatar.includes('photo-1535713875002-d1d0cf377fde') || profileUser.avatar.includes('placeholder')) {
-            missing.push('صورة الحساب الشخصية (Avatar)');
-          }
-          // Cover image uploaded (must not be empty and not default)
-          if (!profileUser.coverImage || profileUser.coverImage === '' || profileUser.coverImage.includes('photo-1557683316') || profileUser.coverImage.includes('photo-1618005182384-a83a8bd57fbe')) {
-            missing.push('صورة غلاف المتجر');
-          }
-          // WhatsApp number added
-          if (!profileUser.whatsapp_number || profileUser.whatsapp_number.trim() === '') {
-            missing.push('رقم واتساب معتمد للتواصل المباشر');
-          }
-          // At least 5 published products
-          if (userProducts.length < 5) {
-            missing.push(`نشر ٥ منتجات على الأقل (لديك حالياً ${userProducts.length})`);
-          }
+            // Store name exists
+            if (!profileUser.name || profileUser.name.trim() === '') {
+              missing.push('تسمية المتجر أو الاسم الشخصي');
+            }
+            // Store description exists (bio)
+            if (!profileUser.bio || profileUser.bio.trim() === '') {
+              missing.push('نبذة تعريفية للمتجر (Bio)');
+            }
+            // Profile image uploaded (not default / empty)
+            if (!profileUser.avatar || profileUser.avatar.includes('photo-1535713875002-d1d0cf377fde') || profileUser.avatar.includes('placeholder')) {
+              missing.push('صورة الحساب الشخصية (Avatar)');
+            }
+            // Cover image uploaded (must not be empty and not default)
+            if (!profileUser.coverImage || profileUser.coverImage === '' || profileUser.coverImage.includes('photo-1557683316') || profileUser.coverImage.includes('photo-1618005182384-a83a8bd57fbe')) {
+              missing.push('صورة غلاف المتجر');
+            }
+            // WhatsApp number added
+            if (!profileUser.whatsapp_number || profileUser.whatsapp_number.trim() === '') {
+              missing.push('رقم واتساب معتمد للتواصل المباشر');
+            }
+            // At least 5 published products
+            if (userProducts.length < 5) {
+              missing.push(`نشر ٥ منتجات على الأقل (لديك حالياً ${userProducts.length})`);
+            }
 
-          // No active violations (pending reports on this user or their products)
-          const activeViolations = reports.some(r => r.reporterId !== profileUser.id && (r.targetId === profileUser.id || userProducts.some(p => p.id === r.targetId)) && r.status === 'pending');
-          if (activeViolations) {
-            missing.push('خلو السجل من البلاغات النشطة أو المخالفات المعلقة');
-          }
+            // No active violations (pending reports on this user or their products)
+            const activeViolations = reports.some(r => r.reporterId !== profileUser.id && (r.targetId === profileUser.id || userProducts.some(p => p.id === r.targetId)) && (r.status === 'pending' || r.status === 'processing'));
+            if (activeViolations) {
+              missing.push('خلو السجل من البلاغات النشطة أو المخالفات المعلقة');
+            }
 
-          const isVerified = profileUser.badges.includes('verified');
-          const myRequests = verificationRequests.filter(r => r.storeId === profileUser.id);
-          const hasPending = myRequests.some(r => r.status === 'pending' || r.status === 'reviewed');
-          const isEligible = missing.length === 0 && !isVerified && !hasPending;
+            const isVerified = profileUser.badges.includes('verified');
+            const myRequests = verificationRequests.filter(r => r.storeId === profileUser.id);
+            const hasPending = myRequests.some(r => r.status === 'pending' || r.status === 'reviewed');
+            const isEligible = missing.length === 0 && !isVerified && !hasPending;
 
-          return (
-            <div className="p-5 bg-gradient-to-br from-indigo-50/40 via-white to-slate-50/50 dark:from-slate-950/20 dark:via-slate-900/60 dark:to-slate-950/40 rounded-3xl border border-indigo-500/10 dark:border-indigo-500/15 shadow-xs space-y-4 text-right">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-start gap-2.5">
-                  <div className="p-2 bg-indigo-500/10 border border-indigo-500/15 rounded-xl shrink-0 mt-0.5">
-                    <ShieldAlert className="w-5 h-5 text-indigo-500" />
+            return (
+              <div className="p-5 bg-gradient-to-br from-indigo-50/40 via-white to-slate-50/50 dark:from-slate-950/20 dark:via-slate-900/60 dark:to-slate-950/40 rounded-3xl border border-indigo-500/10 dark:border-indigo-500/15 shadow-xs space-y-4 text-right">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-start gap-2.5">
+                    <div className="p-2 bg-indigo-500/10 border border-indigo-500/15 rounded-xl shrink-0 mt-0.5">
+                      <ShieldAlert className="w-5 h-5 text-indigo-500" />
+                    </div>
+                    <div>
+                      <h3 className="font-black text-xs text-slate-800 dark:text-white flex items-center gap-1.5">
+                        طلب توثيق المتجر والحصول على الشارة ✔️
+                      </h3>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        احصل على شارة التوثيق الزرقاء لمتجرك لتأكيد مصداقيتك وزيادة ثقة المشترين في معروضاتك المصنعة يدوياً.
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-black text-xs text-slate-800 dark:text-white flex items-center gap-1.5">
-                      طلب توثيق المتجر والحصول على الشارة ✔️
-                    </h3>
-                    <p className="text-[10px] text-slate-400 mt-0.5">
-                      احصل على شارة التوثيق الزرقاء لمتجرك لتأكيد مصداقيتك وزيادة ثقة المشترين في معروضاتك المصنعة يدوياً.
+
+                  {!hasPending && (
+                    <button
+                      onClick={() => setShowVerificationChecklist(!showVerificationChecklist)}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black rounded-xl cursor-pointer transition-colors shrink-0 self-start sm:self-auto"
+                    >
+                      {showVerificationChecklist ? 'إغلاق نافذة التدقيق' : 'تقديم طلب التوثيق'}
+                    </button>
+                  )}
+
+                  {hasPending && (
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      <span className="text-[11px] bg-amber-500/10 text-amber-600 border border-amber-500/20 px-3.5 py-1.5 rounded-xl font-black">
+                        ⏳ طلب التوثيق قيد المراجعة والتدقيق
+                      </span>
+                      <span className="text-[9px] text-slate-400 font-bold">
+                        {myRequests.some(r => r.status === 'reviewed') ? 'حالة الطلب: قيد المراجعة الرقابية النهائية من الإدارة' : 'حالة الطلب: قيد الفرز الأولي من فريق الإشراف'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Rejection notice if last request was rejected */}
+                {myRequests.length > 0 && myRequests[0].status === 'rejected' && !hasPending && (
+                  <div className="p-3.5 bg-rose-500/5 border border-rose-500/15 rounded-2xl text-[11px] leading-relaxed text-rose-600 dark:text-rose-400">
+                    <p className="font-extrabold flex items-center gap-1">
+                      <span>⚠️ تم رفض طلب التوثيق الأخير الخاص بك:</span>
+                    </p>
+                    <p className="mt-1 bg-white/40 dark:bg-black/20 p-2.5 rounded-xl border border-rose-500/10 font-bold">
+                      {myRequests[0].rejectionReason || 'لم يطابق متجرك الشروط والمعايير الأساسية للتسجيل.'}
+                    </p>
+                    <p className="mt-1.5 text-[10px] text-slate-400 font-bold">
+                      يمكنك معالجة النقاط المذكورة وتصحيحها ثم إعادة تقديم طلبك مجدداً بكل سهولة وبدون شروط معقدة.
                     </p>
                   </div>
-                </div>
-
-                {!isVerified && !hasPending && (
-                  <button
-                    onClick={() => setShowVerificationChecklist(!showVerificationChecklist)}
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black rounded-xl cursor-pointer transition-colors shrink-0 self-start sm:self-auto"
-                  >
-                    {showVerificationChecklist ? 'إغلاق نافذة التدقيق' : 'تقديم طلب التوثيق'}
-                  </button>
                 )}
-
-                {isVerified && (
-                  <span className="text-[11px] bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 px-3.5 py-1.5 rounded-xl font-black flex items-center gap-1">
-                    <CheckCircle className="w-4 h-4 shrink-0" />
-                    <span>متجرك موثق ومعتمد رسمياً ✔️</span>
-                  </span>
-                )}
-
-                {hasPending && (
-                  <div className="flex flex-col items-end gap-1 shrink-0">
-                    <span className="text-[11px] bg-amber-500/10 text-amber-600 border border-amber-500/20 px-3.5 py-1.5 rounded-xl font-black">
-                      ⏳ طلب التوثيق قيد المراجعة والتدقيق
-                    </span>
-                    <span className="text-[9px] text-slate-400 font-bold">
-                      {myRequests.some(r => r.status === 'reviewed') ? 'حالة الطلب: قيد المراجعة الرقابية النهائية من الإدارة' : 'حالة الطلب: قيد الفرز الأولي من فريق الإشراف'}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {/* Rejection notice if last request was rejected */}
-              {myRequests.length > 0 && myRequests[0].status === 'rejected' && !hasPending && !isVerified && (
-                <div className="p-3.5 bg-rose-500/5 border border-rose-500/15 rounded-2xl text-[11px] leading-relaxed text-rose-600 dark:text-rose-400">
-                  <p className="font-extrabold flex items-center gap-1">
-                    <span>⚠️ تم رفض طلب التوثيق الأخير الخاص بك:</span>
-                  </p>
-                  <p className="mt-1 bg-white/40 dark:bg-black/20 p-2.5 rounded-xl border border-rose-500/10 font-bold">
-                    {myRequests[0].rejectionReason || 'لم يطابق متجرك الشروط والمعايير الأساسية للتسجيل.'}
-                  </p>
-                  <p className="mt-1.5 text-[10px] text-slate-400 font-bold">
-                    يمكنك معالجة النقاط المذكورة وتصحيحها ثم إعادة تقديم طلبك مجدداً بكل سهولة وبدون شروط معقدة.
-                  </p>
-                </div>
-              )}
 
               {/* Checklist View */}
               {showVerificationChecklist && !isVerified && !hasPending && (
@@ -914,7 +962,7 @@ export default function ProfileView({
 
                     {/* Rule 7: Violations check */}
                     <div className="flex items-center gap-2 text-xs">
-                      <span className={`p-1 rounded-full ${!reports.some(r => r.reporterId !== profileUser.id && (r.targetId === profileUser.id || userProducts.some(p => p.id === r.targetId)) && r.status === 'pending') ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}>
+                      <span className={`p-1 rounded-full ${!reports.some(r => r.reporterId !== profileUser.id && (r.targetId === profileUser.id || userProducts.some(p => p.id === r.targetId)) && (r.status === 'pending' || r.status === 'processing')) ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}>
                         <CheckCircle className="w-4 h-4" />
                       </span>
                       <span className="font-bold text-slate-600 dark:text-slate-400">خلو المتجر من أي بلاغات نشطة أو معلقة</span>
@@ -951,7 +999,7 @@ export default function ProfileView({
               )}
             </div>
           );
-        })()}
+        })())}
 
         {/* Tab Selection */}
         <div className="flex border-b border-slate-150 dark:border-slate-800/80 pt-4 text-xs gap-6 font-bold">

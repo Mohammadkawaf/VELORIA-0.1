@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Report, Product, User, UserBadge, VerificationRequest } from '../types';
+import { Report, Product, User, UserBadge, VerificationRequest, Notification } from '../types';
 import AdminPromptModal from './AdminPromptModal';
+import { supabase, isSupabaseConfigured, supabaseService } from '../lib/supabase';
 import {
   Shield,
   EyeOff,
@@ -29,10 +30,12 @@ interface ModeratorPanelProps {
   verificationRequests?: VerificationRequest[];
   onUpdateVerificationStatus?: (requestId: string, status: 'reviewed' | 'approved' | 'rejected', reason?: string) => void;
   users?: User[];
+  onSelectSeller?: (seller: User) => void;
   // Optional setters for advanced moderation updates
   setUsers?: React.Dispatch<React.SetStateAction<User[]>>;
   setProducts?: React.Dispatch<React.SetStateAction<Product[]>>;
   setReports?: React.Dispatch<React.SetStateAction<Report[]>>;
+  setNotifications?: React.Dispatch<React.SetStateAction<Notification[]>>;
 }
 
 export default function ModeratorPanel({
@@ -45,9 +48,11 @@ export default function ModeratorPanel({
   verificationRequests = [],
   onUpdateVerificationStatus,
   users = [],
+  onSelectSeller,
   setUsers,
   setProducts,
-  setReports
+  setReports,
+  setNotifications
 }: ModeratorPanelProps) {
   // Secure Login Gate
   const [isModAuthenticated, setIsModAuthenticated] = useState<boolean>(() => {
@@ -77,26 +82,175 @@ export default function ModeratorPanel({
     requestId: ''
   });
 
-  const pendingReports = reports.filter((r) => r.status === 'pending');
-  const pastReports = reports.filter((r) => r.status !== 'pending');
+  const pendingReports = reports.filter((r) => r.status === 'pending' || r.status === 'processing');
+  const pastReports = reports.filter((r) => r.status !== 'pending' && r.status !== 'processing');
 
-  const handleGateLogin = (e: React.FormEvent) => {
+  // Reports Handlers
+  const sendReportNotification = (userId: string, title: string, body: string, type: any = 'system') => {
+    const newNotif: Notification = {
+      id: `notif-rep-${Date.now()}-${Math.random()}`,
+      userId,
+      type,
+      title,
+      body,
+      createdAt: new Date().toISOString(),
+      read: false
+    };
+
+    if (setNotifications) {
+      setNotifications((prev) => [newNotif, ...prev]);
+    } else {
+      try {
+        const notifsStr = localStorage.getItem('veloria-notifications');
+        const currentNotifs = notifsStr ? JSON.parse(notifsStr) : [];
+        localStorage.setItem('veloria-notifications', JSON.stringify([newNotif, ...currentNotifs]));
+        window.dispatchEvent(new Event('storage'));
+      } catch (e) {
+        console.warn('Failed to update notifications in localStorage:', e);
+      }
+    }
+  };
+
+  const handleAcceptReport = (reportId: string) => {
+    const report = reports.find(r => r.id === reportId);
+    if (!report) return;
+
+    if (setReports) {
+      setReports(prev => prev.map(r => r.id === reportId ? { ...r, status: 'processing' } : r));
+    }
+
+    sendReportNotification(
+      report.reporterId,
+      'تحديث بشأن بلاغك قيد المراجعة',
+      'تم استلام بلاغك ومراجعته وهو الآن قيد المعالجة.',
+      'system'
+    );
+  };
+
+  const handleHideProductAndResolveReport = async (reportId: string) => {
+    const report = reports.find(r => r.id === reportId);
+    if (!report) return;
+
+    const targetProduct = products.find(p => p.id === report.targetId);
+    if (!targetProduct) return;
+
+    // 1. Hide the product
+    if (setProducts) {
+      setProducts(prev => prev.map(p => p.id === targetProduct.id ? { ...p, status: 'hidden' } : p));
+    }
+
+    // 2. Send notification to the seller
+    sendReportNotification(
+      targetProduct.sellerId,
+      'تنبيه رقابي: تم إخفاء أحد منتجاتك لمخالفة الشروط',
+      `تم إخفاء منتجك "${targetProduct.title}" بسبب: ${report.reason} (${report.details})`,
+      'admin'
+    );
+
+    // 3. Send notification to the reporter
+    sendReportNotification(
+      report.reporterId,
+      'تم حل بلاغك واتخاذ الإجراء اللازم',
+      `تم قبول بلاغك بشأن المنتج "${targetProduct.title}" وتم اتخاذ الإجراء اللازم بإخفاء المنتج.`,
+      'system'
+    );
+
+    // 4. Change report status to 'resolved'
+    if (setReports) {
+      setReports(prev => prev.map(r => r.id === reportId ? { ...r, status: 'resolved' } : r));
+    }
+  };
+
+  const handleRejectReport = (reportId: string) => {
+    const report = reports.find(r => r.id === reportId);
+    if (!report) return;
+
+    // 1. Ask for rejection reason if any
+    const rejectReason = prompt('أدخل سبب رفض الشكوى إن وجد (اختياري):') || '';
+
+    // 2. Change report status to 'dismissed'
+    if (setReports) {
+      setReports(prev => prev.map(r => r.id === reportId ? { ...r, status: 'dismissed' } : r));
+    }
+
+    // 3. Send notification to the reporter
+    const notificationBody = rejectReason
+      ? `تم مراجعة بلاغك المرفوع وتقرر رفضه وتجاهله بسبب: ${rejectReason}`
+      : 'تم مراجعة بلاغك المرفوع وتقرر رفضه وتجاهله كبلاغ كيدي.';
+
+    sendReportNotification(
+      report.reporterId,
+      'تحديث بشأن بلاغك المرفوع',
+      notificationBody,
+      'system'
+    );
+  };
+
+  const handleGateLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const email = loginEmail.trim().toLowerCase();
-
-    if (email !== 'mod@veloria.com' && email !== currentUser.email.toLowerCase()) {
-      setLoginError('حساب المشرف غير متطابق مع البريد الإلكتروني المدخل.');
-      return;
-    }
-
-    if (loginPassword !== 'moderator') {
-      setLoginError('كلمة مرور المشرف غير صحيحة. (كلمة المرور الافتراضية للتجربة هي: moderator)');
-      return;
-    }
-
-    setIsModAuthenticated(true);
-    sessionStorage.setItem('veloria-mod-gate-auth', 'true');
+    const cleanEmail = loginEmail.trim().toLowerCase();
+    
     setLoginError('');
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        // 1. Use supabase.auth.signInWithPassword to verify email and password
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password: loginPassword,
+        });
+
+        if (authError) {
+          setLoginError(authError.message || 'فشل تسجيل الدخول. يرجى التحقق من البيانات.');
+          return;
+        }
+
+        const authUser = authData?.user;
+        if (!authUser) {
+          setLoginError('لم يتم العثور على المستخدم في نظام المصادقة.');
+          return;
+        }
+
+        // 2. Search within the profiles table
+        const profile = await supabaseService.getProfile(authUser.id, authUser.email, authUser.user_metadata);
+        if (!profile) {
+          setLoginError('لم يتم العثور على الملف الشخصي لهذا الحساب.');
+          return;
+        }
+
+        // 3. Verify that role = 'admin' or role = 'moderator'
+        if (profile.role !== 'admin' && profile.role !== 'moderator') {
+          setLoginError('عذراً! هذه البوابة مخصصة للإدارة والمشرفين فقط.');
+          return;
+        }
+
+        // 4. Success Authentication
+        setIsModAuthenticated(true);
+        sessionStorage.setItem('veloria-mod-gate-auth', 'true');
+        setLoginError('');
+      } catch (err: any) {
+        console.warn('Moderator Gate Login error:', err);
+        setLoginError(err?.message || 'حدث خطأ أثناء الاتصال بقاعدة البيانات.');
+      }
+    } else {
+      // Fallback for mock/local environment when Supabase is not configured
+      const userMatch = users.find(u => u.email.toLowerCase() === cleanEmail);
+      
+      if (!userMatch) {
+        setLoginError('لم يتم العثور على حساب بهذا البريد الإلكتروني.');
+        return;
+      }
+
+      if (userMatch.role !== 'admin' && userMatch.role !== 'moderator') {
+        setLoginError('عذراً! هذه البوابة مخصصة للإدارة والمشرفين فقط.');
+        return;
+      }
+
+      // Success Authentication
+      setIsModAuthenticated(true);
+      sessionStorage.setItem('veloria-mod-gate-auth', 'true');
+      setLoginError('');
+    }
   };
 
   const handleQuickBypass = () => {
@@ -156,7 +310,7 @@ export default function ModeratorPanel({
                   type="email"
                   value={loginEmail}
                   onChange={(e) => setLoginEmail(e.target.value)}
-                  placeholder="mod@veloria.com"
+                  placeholder="example@domain.com"
                   className="w-full text-xs p-3 pr-10 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 text-slate-900 dark:text-white"
                   required
                 />
@@ -314,56 +468,72 @@ export default function ModeratorPanel({
                     return (
                       <div
                         key={rep.id}
+                        dir="rtl"
                         className="p-5 rounded-2xl border border-rose-500/10 bg-rose-500/5 dark:bg-rose-500/10 space-y-3 text-right"
                       >
-                        <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center justify-between flex-wrap gap-2 text-right" dir="rtl">
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] bg-rose-500 text-white font-extrabold px-2.5 py-0.5 rounded">
                               مخالفة: {rep.type === 'product' ? 'إعلان منتج' : 'حساب بائع'}
                             </span>
-                            <span className="text-xs font-bold text-slate-900 dark:text-white">{rep.targetName}</span>
+                            {rep.status === 'pending' && (
+                              <span className="text-[10px] bg-amber-500/10 text-amber-500 border border-amber-500/20 font-extrabold px-2 py-0.5 rounded">
+                                جديد
+                              </span>
+                            )}
+                            {rep.status === 'processing' && (
+                              <span className="text-[10px] bg-indigo-500/10 text-indigo-500 border border-indigo-500/20 font-extrabold px-2 py-0.5 rounded">
+                                قيد المعالجة
+                              </span>
+                            )}
+                            <span className="text-xs font-bold text-slate-900 dark:text-white" dir="auto">{rep.targetName}</span>
                           </div>
-                          <span className="text-[10px] text-slate-400">الشاكي: {rep.reporterName}</span>
+                          <span className="text-[10px] text-slate-400" dir="auto">الشاكي: {rep.reporterName}</span>
                         </div>
 
-                        <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-850 text-xs">
-                          <div>
-                            <strong className="text-orange-600">السبب الأساسي:</strong> {rep.reason}
+                        <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-850 text-xs text-right break-words" dir="rtl" style={{ direction: 'rtl', textAlign: 'right', unicodeBidi: 'plaintext' }}>
+                          <div dir="rtl" className="text-right" style={{ direction: 'rtl', textAlign: 'right', unicodeBidi: 'plaintext' }}>
+                            <strong className="text-orange-600">السبب الأساسي:</strong>{' '}
+                            <span dir="rtl" className="text-right" style={{ direction: 'rtl', textAlign: 'right', unicodeBidi: 'plaintext' }}>
+                              {rep.reason}
+                            </span>
                           </div>
                           {rep.details && (
-                            <div className="mt-1 text-slate-500 text-[11px]">
-                              <strong>تفاصيل داعمة:</strong> {rep.details}
+                            <div className="mt-1 text-slate-500 text-[11px] text-right" dir="rtl" style={{ direction: 'rtl', textAlign: 'right', unicodeBidi: 'plaintext' }}>
+                              <strong>تفاصيل داعمة:</strong>{' '}
+                              <p className="mt-1 text-right text-slate-600 dark:text-slate-400" dir="rtl" style={{ direction: 'rtl', textAlign: 'right', unicodeBidi: 'plaintext' }}>
+                                <span dir="rtl" style={{ direction: 'rtl', textAlign: 'right', unicodeBidi: 'plaintext' }}>
+                                  {rep.details}
+                                </span>
+                              </p>
                             </div>
                           )}
                         </div>
 
                         <div className="flex items-center gap-2 pt-1 flex-wrap">
-                          <button
-                            onClick={() => onResolveReport(rep.id, 'resolved')}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-1.5 rounded-xl cursor-pointer"
-                          >
-                            اعتماد وحل الشكوى
-                          </button>
+                          {rep.status === 'pending' && (
+                            <button
+                              onClick={() => handleAcceptReport(rep.id)}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-1.5 rounded-xl cursor-pointer"
+                            >
+                              قبول الشكوى
+                            </button>
+                          )}
 
                           {rep.type === 'product' && targetProduct && targetProduct.status !== 'hidden' && (
                             <button
-                              onClick={() => {
-                                console.log("Hide button clicked");
-                                console.log("calling handleUpdateProductStatus");
-                                onUpdateProductStatus(targetProduct.id, 'hidden');
-                                onResolveReport(rep.id, 'resolved');
-                              }}
+                              onClick={() => handleHideProductAndResolveReport(rep.id)}
                               className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-3 py-1.5 rounded-xl cursor-pointer"
                             >
-                              إخفاء المنتج فوراً لمخالفة الشروط
+                              إخفاء المنتج المخالف وحل الشكوى
                             </button>
                           )}
 
                           <button
-                            onClick={() => onResolveReport(rep.id, 'dismissed')}
+                            onClick={() => handleRejectReport(rep.id)}
                             className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-600 dark:text-slate-300 font-bold text-xs px-3 py-1.5 rounded-xl cursor-pointer"
                           >
-                            تجاهل الشكوى
+                            تجاهل (بلاغ كيدي)
                           </button>
                         </div>
                       </div>
@@ -487,16 +657,46 @@ export default function ModeratorPanel({
               ) : (
                 <div className="space-y-4">
                   {verificationRequests.filter(r => r.status === 'pending').map((req) => {
-                    const targetUser = (users || []).find(u => u.id === req.storeId);
+                    const targetUser = (users || []).find(u => u.id === req.storeId) || {
+                      id: req.storeId,
+                      name: req.storeName,
+                      email: '',
+                      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&h=150&q=80',
+                      badges: [],
+                      isPremium: false,
+                      followersCount: 0,
+                      ratingAverage: 5,
+                      ratingsCount: 0,
+                      role: 'user' as const,
+                      joinedAt: req.createdAt || new Date().toISOString(),
+                      username: req.storeUsername
+                    };
                     const userProds = (products || []).filter(p => p.sellerId === req.storeId);
                     return (
                       <div key={req.id} className="p-5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-2xl space-y-4 text-right">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200/50 dark:border-slate-850 pb-3">
                           <div className="flex items-center gap-3">
-                            <img src={targetUser?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&h=150&q=80'} className="w-10 h-10 rounded-full object-cover" />
+                            <img 
+                              src={targetUser?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&h=150&q=80'} 
+                              onClick={() => onSelectSeller?.(targetUser as User)}
+                              className="w-10 h-10 rounded-full object-cover cursor-pointer hover:opacity-80 transition-opacity" 
+                              title="اضغط لفتح صفحة المتجر والمراجعة"
+                            />
                             <div>
-                              <h4 className="font-bold text-xs text-slate-800 dark:text-slate-200">{req.storeName}</h4>
-                              <p className="text-[10px] text-slate-400">@{req.storeUsername}</p>
+                              <h4 
+                                onClick={() => onSelectSeller?.(targetUser as User)}
+                                className="font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-amber-500 hover:underline cursor-pointer transition-colors"
+                                title="اضغط لفتح صفحة المتجر والمراجعة"
+                              >
+                                {req.storeName}
+                              </h4>
+                              <p 
+                                onClick={() => onSelectSeller?.(targetUser as User)}
+                                className="text-[10px] text-slate-400 hover:text-indigo-500 hover:underline cursor-pointer"
+                                title="اضغط لفتح صفحة المتجر والمراجعة"
+                              >
+                                @{req.storeUsername}
+                              </p>
                             </div>
                           </div>
                           <span className="text-[10px] bg-amber-500/10 text-amber-600 dark:text-amber-400 px-3 py-1 rounded-full font-bold self-start sm:self-auto">

@@ -98,8 +98,8 @@ export default function LegalView({ settings }: LegalViewProps) {
             </div>
 
             <div className="space-y-3 pt-3">
-              {settings?.disclaimer ? (
-                renderFormattedText(settings.disclaimer)
+              {(settings?.disclaimerText || settings?.disclaimer) ? (
+                renderFormattedText(settings.disclaimerText || settings.disclaimer)
               ) : (
                 <>
                   <h4 className="font-extrabold text-slate-800 dark:text-slate-200">١. آلية عمل فيلوريا ودورها الفعلي:</h4>

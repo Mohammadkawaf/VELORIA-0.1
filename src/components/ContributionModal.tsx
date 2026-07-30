@@ -6,13 +6,17 @@ interface ContributionModalProps {
   onClose: () => void;
   onConfirmTransfer: () => void;
   accountNumber?: string;
+  instructions?: string;
+  donationMessage?: string;
 }
 
 export default function ContributionModal({
   isOpen,
   onClose,
   onConfirmTransfer,
-  accountNumber = 'XXXXXXXXXX'
+  accountNumber = 'XXXXXXXXXX',
+  instructions,
+  donationMessage
 }: ContributionModalProps) {
   const [copied, setCopied] = useState(false);
 
@@ -51,7 +55,7 @@ export default function ContributionModal({
             </p>
             <div className="h-px bg-slate-200 dark:bg-slate-800 my-2" />
             <p className="text-[11px] text-slate-500 dark:text-slate-500 italic">
-              هل ساعدتك منصة فيلوريا في إتمام صفقتك بنجاح؟ مساهمتك الاختيارية تعزز استقرار المنصة وتطورها.
+              {donationMessage || 'هل ساعدتك منصة فيلوريا في إتمام صفقتك بنجاح؟ مساهمتك الاختيارية تعزز استقرار المنصة وتطورها.'}
             </p>
           </div>
 
@@ -74,8 +78,8 @@ export default function ContributionModal({
 
           <div className="flex items-start gap-2 bg-amber-500/5 p-3 rounded-xl border border-amber-500/10 text-[10px] text-amber-700 dark:text-amber-400">
             <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-            <p className="leading-relaxed">
-              يرجى تحويل مبلغ المساهمة عبر خدمة "شام كاش" إلى رقم الحساب أعلاه، ثم النقر على زر <strong>"لقد قمت بالتحويل"</strong> لتسجيل المعاملة.
+            <p className="leading-relaxed whitespace-pre-line">
+              {instructions || 'يرجى تحويل مبلغ المساهمة عبر خدمة "شام كاش" إلى رقم الحساب أعلاه، ثم النقر على زر "لقد قمت بالتحويل" لتسجيل المعاملة.'}
             </p>
           </div>
         </div>

@@ -63,7 +63,17 @@ export default function SearchView({
 
   // Filter & Sort Logic
   const filteredProducts = useMemo(() => {
-    let result = products.filter((p) => p.status === 'active' || p.status === 'sold');
+    let result = products.filter((p) => {
+      const isStatusValid = p.status === 'active' || p.status === 'sold';
+      if (!isStatusValid) return false;
+      if (categories.length > 0) {
+        return categories.some((c) => {
+          const isMatch = String(c.id) === String(p.categoryId) || c.id === p.categoryId || (typeof c.id === 'string' && c.id.replace('cat-', '') === String(p.categoryId).replace('cat-', ''));
+          return isMatch && c.is_active !== false && c.isActive !== false;
+        });
+      }
+      return true;
+    });
 
     // 1. Advanced Arabic Search Query Parser
     if (searchQuery.trim() !== '') {

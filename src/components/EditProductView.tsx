@@ -314,7 +314,7 @@ export default function EditProductView({
               required
             >
               <option value="">-- اختر التصنيف المناسب --</option>
-              {categories.map((cat) => (
+              {categories.filter(c => c.is_active !== false && c.isActive !== false).map((cat) => (
                 <option key={cat.id} value={cat.id}>{cat.name}</option>
               ))}
             </select>

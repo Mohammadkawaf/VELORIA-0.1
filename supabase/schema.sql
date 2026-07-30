@@ -22,6 +22,7 @@ create table public.profiles (
     rating numeric(3,2) default 5.0,
     profile_views integer default 0,
     role text default 'visitor' check (role in ('visitor', 'user', 'moderator', 'admin')),
+    is_featured boolean default false,
     last_active_at timestamp with time zone default timezone('utc'::text, now()),
     created_at timestamp with time zone default timezone('utc'::text, now()),
     updated_at timestamp with time zone default timezone('utc'::text, now())
@@ -38,6 +39,7 @@ create table public.categories (
     name text not null,
     slug text not null unique,
     icon text,
+    is_active boolean default true,
     created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
@@ -90,9 +92,9 @@ create table public.favorites (
 alter table public.favorites enable row level security;
 
 -- ==========================================
--- 6. TABLE: follows
+-- 6. TABLE: followers
 -- ==========================================
-create table public.follows (
+create table public.followers (
     id uuid primary key default uuid_generate_v4(),
     follower_id uuid references public.profiles(id) on delete cascade not null,
     following_id uuid references public.profiles(id) on delete cascade not null,
@@ -101,7 +103,7 @@ create table public.follows (
     check (follower_id <> following_id)
 );
 
-alter table public.follows enable row level security;
+alter table public.followers enable row level security;
 
 -- ==========================================
 -- 7. TABLE: notifications
@@ -359,12 +361,18 @@ create policy "Allow users to view own favorites"
 create policy "Allow users to manage own favorites" 
   on public.favorites for all using (auth.uid() = user_id);
 
--- 6. Follows Policies
-create policy "Allow public read access to follows" 
-  on public.follows for select using (true);
+-- 6. Followers Policies
+create policy "Allow public read access on followers" 
+  on public.followers for select using (true);
 
-create policy "Allow followers to manage follows" 
-  on public.follows for all using (auth.uid() = follower_id);
+create policy "Allow users to insert followers" 
+  on public.followers for insert with check (auth.uid() = follower_id or exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'));
+
+create policy "Allow users to delete followers" 
+  on public.followers for delete using (auth.uid() = follower_id or exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'));
+
+create policy "Allow users to update followers" 
+  on public.followers for update using (auth.uid() = follower_id or exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'));
 
 -- 7. Notifications Policies
 create policy "Allow users to see own notifications" 
