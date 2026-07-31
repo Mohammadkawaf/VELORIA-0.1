@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Report, Product, User, UserBadge, VerificationRequest, Notification } from '../types';
 import AdminPromptModal from './AdminPromptModal';
+import { ReportCard } from './ReportCard';
 import { supabase, isSupabaseConfigured, supabaseService } from '../lib/supabase';
 import {
   Shield,
@@ -465,78 +466,18 @@ export default function ModeratorPanel({
                 <div className="space-y-4">
                   {pendingReports.map((rep) => {
                     const targetProduct = products.find((p) => p.id === rep.targetId);
+                    const reportedUser = users.find((u) => u.id === rep.targetId);
                     return (
-                      <div
+                      <ReportCard
                         key={rep.id}
-                        dir="rtl"
-                        className="p-5 rounded-2xl border border-rose-500/10 bg-rose-500/5 dark:bg-rose-500/10 space-y-3 text-right"
-                      >
-                        <div className="flex items-center justify-between flex-wrap gap-2 text-right" dir="rtl">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] bg-rose-500 text-white font-extrabold px-2.5 py-0.5 rounded">
-                              مخالفة: {rep.type === 'product' ? 'إعلان منتج' : 'حساب بائع'}
-                            </span>
-                            {rep.status === 'pending' && (
-                              <span className="text-[10px] bg-amber-500/10 text-amber-500 border border-amber-500/20 font-extrabold px-2 py-0.5 rounded">
-                                جديد
-                              </span>
-                            )}
-                            {rep.status === 'processing' && (
-                              <span className="text-[10px] bg-indigo-500/10 text-indigo-500 border border-indigo-500/20 font-extrabold px-2 py-0.5 rounded">
-                                قيد المعالجة
-                              </span>
-                            )}
-                            <span className="text-xs font-bold text-slate-900 dark:text-white" dir="auto">{rep.targetName}</span>
-                          </div>
-                          <span className="text-[10px] text-slate-400" dir="auto">الشاكي: {rep.reporterName}</span>
-                        </div>
-
-                        <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-850 text-xs text-right break-words" dir="rtl" style={{ direction: 'rtl', textAlign: 'right', unicodeBidi: 'plaintext' }}>
-                          <div dir="rtl" className="text-right" style={{ direction: 'rtl', textAlign: 'right', unicodeBidi: 'plaintext' }}>
-                            <strong className="text-orange-600">السبب الأساسي:</strong>{' '}
-                            <span dir="rtl" className="text-right" style={{ direction: 'rtl', textAlign: 'right', unicodeBidi: 'plaintext' }}>
-                              {rep.reason}
-                            </span>
-                          </div>
-                          {rep.details && (
-                            <div className="mt-1 text-slate-500 text-[11px] text-right" dir="rtl" style={{ direction: 'rtl', textAlign: 'right', unicodeBidi: 'plaintext' }}>
-                              <strong>تفاصيل داعمة:</strong>{' '}
-                              <p className="mt-1 text-right text-slate-600 dark:text-slate-400" dir="rtl" style={{ direction: 'rtl', textAlign: 'right', unicodeBidi: 'plaintext' }}>
-                                <span dir="rtl" style={{ direction: 'rtl', textAlign: 'right', unicodeBidi: 'plaintext' }}>
-                                  {rep.details}
-                                </span>
-                              </p>
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-2 pt-1 flex-wrap">
-                          {rep.status === 'pending' && (
-                            <button
-                              onClick={() => handleAcceptReport(rep.id)}
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-1.5 rounded-xl cursor-pointer"
-                            >
-                              قبول الشكوى
-                            </button>
-                          )}
-
-                          {rep.type === 'product' && targetProduct && targetProduct.status !== 'hidden' && (
-                            <button
-                              onClick={() => handleHideProductAndResolveReport(rep.id)}
-                              className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-3 py-1.5 rounded-xl cursor-pointer"
-                            >
-                              إخفاء المنتج المخالف وحل الشكوى
-                            </button>
-                          )}
-
-                          <button
-                            onClick={() => handleRejectReport(rep.id)}
-                            className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-600 dark:text-slate-300 font-bold text-xs px-3 py-1.5 rounded-xl cursor-pointer"
-                          >
-                            تجاهل (بلاغ كيدي)
-                          </button>
-                        </div>
-                      </div>
+                        report={rep}
+                        targetProduct={targetProduct}
+                        reportedUser={reportedUser}
+                        onAcceptReport={handleAcceptReport}
+                        onHideProduct={handleHideProductAndResolveReport}
+                        onRejectReport={handleRejectReport}
+                        isModeratorView={true}
+                      />
                     );
                   })}
                 </div>

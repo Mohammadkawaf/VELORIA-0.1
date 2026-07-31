@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { User, Category, Product, Report, UserBadge, Order, UserRole, Contribution, VerificationRequest, ContactMessage, AppSettings, Review, Message, Notification } from '../types';
 import AdminSettingsView from './AdminSettingsView';
 import HideProductModal from './HideProductModal';
+import { ReportCard } from './ReportCard';
 import { supabase, supabaseService, isSupabaseConfigured, mapProfileToUser, getDeviceType } from '../lib/supabase';
 import {
   Shield,
@@ -3276,110 +3277,16 @@ export default function AdminPanel({
                     const targetProduct = products.find(p => p.id === rep.targetId);
                     const reportedUser = users.find(u => u.id === rep.targetId);
                     return (
-                      <div key={rep.id} dir="rtl" className="p-5 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/10 space-y-3 text-right">
-                        <div className="flex items-center justify-between flex-wrap gap-2 text-right" dir="rtl">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] bg-rose-500 text-white font-extrabold px-2 py-0.5 rounded">
-                              بلاغ على {rep.type === 'product' ? 'منتج إعلاني' : 'حساب بائع'}
-                            </span>
-                            {rep.status === 'pending' && (
-                              <span className="text-[10px] bg-amber-500/10 text-amber-500 border border-amber-500/20 font-extrabold px-2 py-0.5 rounded">
-                                جديد
-                              </span>
-                            )}
-                            {rep.status === 'processing' && (
-                              <span className="text-[10px] bg-indigo-500/10 text-indigo-500 border border-indigo-500/20 font-extrabold px-2 py-0.5 rounded">
-                                قيد المعالجة
-                              </span>
-                            )}
-                            {rep.status === 'resolved' && (
-                              <span className="text-[10px] bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 font-extrabold px-2 py-0.5 rounded">
-                                تم الحل
-                              </span>
-                            )}
-                            {rep.status === 'dismissed' && (
-                              <span className="text-[10px] bg-slate-500/10 text-slate-500 border border-slate-500/20 font-extrabold px-2 py-0.5 rounded">
-                                مرفوض
-                              </span>
-                            )}
-                            <span className="text-xs font-bold text-slate-900 dark:text-white" dir="auto">
-                              {rep.targetName}
-                            </span>
-                          </div>
-                          <div className="text-[10px] text-slate-400 text-right" dir="rtl">
-                            الشاكي: <strong className="text-slate-700 dark:text-slate-300" dir="auto">{rep.reporterName}</strong> | تاريخ: <span dir="ltr">{rep.createdAt ? rep.createdAt.split('T')[0] : '2026-06-25'}</span>
-                          </div>
-                        </div>
-
-                        <div className="p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-850 text-xs space-y-1.5 text-right break-words" dir="rtl" style={{ direction: 'rtl', textAlign: 'right', unicodeBidi: 'plaintext' }}>
-                          <div dir="rtl" className="text-right" style={{ direction: 'rtl', textAlign: 'right', unicodeBidi: 'plaintext' }}>
-                            <strong className="text-amber-600">سبب المخالفة المحددة:</strong>{' '}
-                            <span className="text-slate-700 dark:text-slate-300 font-medium" dir="rtl" style={{ direction: 'rtl', textAlign: 'right', unicodeBidi: 'plaintext' }}>
-                              {rep.reason}
-                            </span>
-                          </div>
-                          {rep.details && (
-                            <div dir="rtl" className="text-right" style={{ direction: 'rtl', textAlign: 'right', unicodeBidi: 'plaintext' }}>
-                              <strong className="text-slate-400">شرح وتفاصيل داعمة للشكوى:</strong>{' '}
-                              <p className="text-slate-600 dark:text-slate-400 mt-1 text-right" dir="rtl" style={{ direction: 'rtl', textAlign: 'right', unicodeBidi: 'plaintext' }}>
-                                <span dir="rtl" style={{ direction: 'rtl', textAlign: 'right', unicodeBidi: 'plaintext' }}>
-                                  {rep.details}
-                                </span>
-                              </p>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Report Resolution State Actions */}
-                        <div className="flex items-center gap-2 flex-wrap pt-1">
-                          {(rep.status === 'pending' || rep.status === 'processing') ? (
-                            <>
-                              {rep.status === 'pending' && (
-                                <button
-                                  onClick={() => handleAcceptReport(rep.id)}
-                                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-1.5 rounded-xl cursor-pointer"
-                                >
-                                  قبول الشكوى واعتمادها
-                                </button>
-                              )}
-
-                              {rep.type === 'product' && targetProduct && targetProduct.status !== 'hidden' && (
-                                <button
-                                  onClick={() => handleHideProductAndResolveReport(rep.id)}
-                                  className="bg-slate-950 hover:bg-slate-900 text-white font-bold text-xs px-3 py-1.5 rounded-xl cursor-pointer"
-                                >
-                                  إخفاء المنتج المخالف وحل الشكوى
-                                </button>
-                              )}
-
-                              {rep.type === 'user' && reportedUser && reportedUser.status !== 'suspended' && (
-                                <button
-                                  onClick={() => handleUserSuspendAndResolveReport(rep.id)}
-                                  className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-3 py-1.5 rounded-xl cursor-pointer"
-                                >
-                                  تعليق بائع معتمد وحل الشكوى
-                                </button>
-                              )}
-
-                              <button
-                                onClick={() => handleRejectReport(rep.id)}
-                                className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 text-slate-600 dark:text-slate-300 font-bold text-xs px-3 py-1.5 rounded-xl cursor-pointer"
-                              >
-                                تجاهل / بلاغ كيدي
-                              </button>
-                            </>
-                          ) : (
-                            <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full ${
-                              rep.status === 'resolved' 
-                                ? 'bg-emerald-500/10 text-emerald-500' 
-                                : 'bg-slate-500/10 text-slate-500'
-                            }`}>
-                              <Check className="w-3.5 h-3.5" />
-                              {rep.status === 'resolved' ? 'تم معالجة الشكوى واتخاذ القرار الرقابي' : 'تم رفض البلاغ وحفظ الملف كبلاغ كيدي'}
-                            </span>
-                          )}
-                        </div>
-                      </div>
+                      <ReportCard
+                        key={rep.id}
+                        report={rep}
+                        targetProduct={targetProduct}
+                        reportedUser={reportedUser}
+                        onAcceptReport={handleAcceptReport}
+                        onHideProduct={handleHideProductAndResolveReport}
+                        onSuspendUser={handleUserSuspendAndResolveReport}
+                        onRejectReport={handleRejectReport}
+                      />
                     );
                   })}
                 </div>

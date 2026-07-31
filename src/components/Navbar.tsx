@@ -1,5 +1,5 @@
 import { Category, User, Order, AppSettings } from '../types';
-import { Search, Moon, Sun, MessageSquare, Bell, Store, Heart, Compass, Menu, Database } from 'lucide-react';
+import { Search, Moon, Sun, MessageSquare, Bell, Store, Heart, Compass, Menu, Database, ArrowRight } from 'lucide-react';
 import Icon from './Icons';
 import { isSupabaseConfigured } from '../lib/supabase';
 
@@ -22,6 +22,8 @@ interface NavbarProps {
   onOpenMenu: () => void;
   settings?: AppSettings;
   showSearchAndCategories?: boolean;
+  canGoBack?: boolean;
+  onNavigateBack?: () => void;
 }
 
 export default function Navbar({
@@ -42,7 +44,9 @@ export default function Navbar({
   showFavoritesOnly,
   onOpenMenu,
   settings,
-  showSearchAndCategories = true
+  showSearchAndCategories = true,
+  canGoBack,
+  onNavigateBack
 }: NavbarProps) {
   // Calculate pending/new orders for seller
   const sellerOrdersCount = currentUser
@@ -174,6 +178,17 @@ export default function Navbar({
                 </button>
               </>
             )}
+
+            {/* Header Back Button Icon */}
+            {canGoBack && onNavigateBack && (
+              <button
+                onClick={onNavigateBack}
+                className="p-2 rounded-xl text-slate-500 hover:text-amber-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all cursor-pointer"
+                title="الرجوع للصفحة السابقة"
+              >
+                <ArrowRight className="w-5 h-5" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -188,38 +203,6 @@ export default function Navbar({
               className="w-full text-xs pr-10 pl-4 py-2.5 rounded-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:outline-hidden"
             />
             <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-3" />
-          </div>
-        )}
-
-        {/* Bottom Row: Category Pills */}
-        {showSearchAndCategories && (
-          <div className="flex items-center gap-1.5 overflow-x-auto py-1 scrollbar-none scroll-smooth">
-            <button
-              onClick={() => { onSelectCategory(null); onShowFavoritesOnly(false); }}
-              className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all shrink-0 flex items-center gap-1 cursor-pointer ${
-                activeCategoryId === null && !showFavoritesOnly
-                  ? 'bg-amber-500 text-slate-950 font-black shadow-xs'
-                  : 'bg-slate-50 dark:bg-slate-850 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
-              }`}
-            >
-              <Compass className="w-3.5 h-3.5" />
-              <span>السوق بالكامل</span>
-            </button>
-
-            {categories.map((cat) => (
-              <button
-                key={cat.id}
-                onClick={() => { onSelectCategory(cat.id); onShowFavoritesOnly(false); }}
-                className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all shrink-0 flex items-center gap-1 cursor-pointer ${
-                  activeCategoryId === cat.id && !showFavoritesOnly
-                    ? 'bg-amber-500 text-slate-950 font-black shadow-xs'
-                    : 'bg-slate-50 dark:bg-slate-850 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
-                }`}
-              >
-                <Icon name={cat.icon} className="w-3.5 h-3.5" />
-                <span>{cat.name}</span>
-              </button>
-            ))}
           </div>
         )}
       </div>

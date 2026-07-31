@@ -5,6 +5,8 @@ import HideProductModal from './components/HideProductModal';
 import AdminPromptModal from './components/AdminPromptModal';
 import RoleSwitcher from './components/RoleSwitcher';
 import ProductCard from './components/ProductCard';
+import CompactProductCard from './components/CompactProductCard';
+import Icon from './components/Icons';
 import ProductDetailsModal from './components/ProductDetailsModal';
 import SellerDashboard from './components/SellerDashboard';
 import ModeratorPanel from './components/ModeratorPanel';
@@ -31,7 +33,7 @@ import NotificationsView from './components/NotificationsView';
 import SettingsView from './components/SettingsView';
 import ResetPasswordView from './components/ResetPasswordView';
 
-import { Sparkles, ShoppingBag, Heart, MessageSquare, Shield, HelpCircle, SlidersHorizontal, ArrowLeft, Star, Store, PlusCircle, ShieldAlert, ChevronRight, Flame, Loader2, RotateCcw, MapPin, Coins, Check, Megaphone } from 'lucide-react';
+import { Sparkles, ShoppingBag, Heart, MessageSquare, Shield, HelpCircle, SlidersHorizontal, ArrowLeft, ArrowRight, Star, Store, PlusCircle, ShieldAlert, ChevronRight, Flame, Loader2, RotateCcw, MapPin, Coins, Check, Megaphone } from 'lucide-react';
 
 // Syrian Governorates & Cities mapping
 const GOVERNORATES_CITIES: Record<string, string[]> = {
@@ -431,6 +433,33 @@ export default function App() {
       });
     });
   };
+
+  // Compute recommended products for home page based on user activity (favorites, orders, popular)
+  const recommendedProducts = useMemo(() => {
+    if (!visibleProducts || visibleProducts.length === 0) return [];
+
+    const favoritedProducts = visibleProducts.filter((p) => favorites.includes(p.id));
+    const userOrderProductIds = (orders || [])
+      .filter((o) => o.buyerId === currentUser?.id)
+      .map((o) => o.productId);
+    const orderedProducts = visibleProducts.filter((p) => userOrderProductIds.includes(p.id));
+
+    const interestedCategoryIds = new Set<string>();
+    favoritedProducts.forEach((p) => interestedCategoryIds.add(String(p.categoryId)));
+    orderedProducts.forEach((p) => interestedCategoryIds.add(String(p.categoryId)));
+
+    let recs = visibleProducts.filter((p) => interestedCategoryIds.has(String(p.categoryId)));
+
+    if (recs.length < 8) {
+      const existingIds = new Set(recs.map((p) => p.id));
+      const popularProducts = [...visibleProducts]
+        .sort((a, b) => (b.viewsCount || 0) - (a.viewsCount || 0))
+        .filter((p) => !existingIds.has(p.id));
+      recs = [...recs, ...popularProducts];
+    }
+
+    return recs.slice(0, 12);
+  }, [visibleProducts, favorites, orders, currentUser]);
 
   // UI state
   const [currentView, setCurrentView] = useState<string>('market');
@@ -1202,12 +1231,8 @@ export default function App() {
   };
 
   const handleSendReport = (reportData: Omit<Report, 'id' | 'createdAt' | 'reporterId' | 'reporterName' | 'status'>) => {
-    console.log("Report button clicked");
-    console.log("Entered report handler");
-    console.log("Before opening report modal");
-    console.log("After opening report modal");
+    console.log("details received:", reportData.details);
     if (!currentUser) {
-      console.log("Before return");
       return;
     }
     const newRep: Report = {
@@ -1218,10 +1243,8 @@ export default function App() {
       createdAt: new Date().toISOString(),
       status: 'pending'
     };
-    console.log("Before setState");
+    console.log("payload:", newRep);
     setReports((prev) => [newRep, ...prev]);
-    console.log("After setState");
-    console.log("Before return");
   };
 
   const executeUpdateProductStatus = async (productId: string, status: 'active' | 'hidden' | 'sold' | 'expired', reason: string = '') => {
@@ -2111,6 +2134,8 @@ export default function App() {
         onOpenMenu={() => setIsMenuOpen(true)}
         settings={appSettings}
         showSearchAndCategories={currentView === 'market' && activeMarketTab === 'all'}
+        canGoBack={viewHistory.length > 0 || currentView !== 'market'}
+        onNavigateBack={navigateBack}
       />
 
       {/* Announcement Banner Bar (directly below Navbar) */}
@@ -2164,24 +2189,6 @@ export default function App() {
           </div>
         );
       })()}
-
-      {/* Dynamic Back Button Indicator */}
-      {viewHistory.length > 0 && (
-        <div className="bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800/80 sticky top-[60px] z-20 font-sans">
-          <div className="max-w-7xl mx-auto px-4 py-2 flex items-center justify-between">
-            <button
-              onClick={navigateBack}
-              className="flex items-center gap-2 px-3.5 py-1.5 bg-white dark:bg-slate-950 border border-slate-250 dark:border-slate-800 rounded-xl text-xs font-black text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-900 transition-all cursor-pointer shadow-xs"
-            >
-              <ChevronRight className="w-4 h-4 text-amber-500" />
-              <span>🔙 العودة للصفحة السابقة</span>
-            </button>
-            <span className="text-[10px] text-slate-400 font-bold hidden sm:inline">
-              تصفح مرن دون فقدان المسار في سوق فيلوريا
-            </span>
-          </div>
-        </div>
-      )}
 
       {/* Role Navigation Dashboard Subbar */}
       {currentUser && (
@@ -2617,8 +2624,40 @@ export default function App() {
                 {/* Tab: السوق العام */}
                 {activeMarketTab === 'all' && (
                   <>
-                    {/* 1. Suggested Stores Section (المتاجر المقترحة) */}
-                    <div className="space-y-4">
+                    {/* 1. "مقترحة لك" Section (Recommended Products) */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-slate-400 font-bold hidden sm:inline">
+                          بناءً على اهتماماتك وتصفحك للمنصة
+                        </span>
+                        <h3 className="text-base font-black text-slate-850 dark:text-white flex items-center gap-2">
+                          مقترحة لك
+                          <Sparkles className="w-4.5 h-4.5 text-amber-500" />
+                        </h3>
+                      </div>
+
+                      {recommendedProducts.length === 0 ? (
+                        <div className="p-8 text-center bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-slate-400 text-xs">
+                          لا توجد مقترحات متاحة حالياً
+                        </div>
+                      ) : (
+                        <div className="flex gap-3 overflow-x-auto pb-4 pt-1 scrollbar-thin scrollbar-thumb-amber-500/20 hover:scrollbar-thumb-amber-500/40 scrollbar-track-transparent snap-x">
+                          {recommendedProducts.map((prod) => (
+                            <CompactProductCard
+                              key={`recommended-${prod.id}`}
+                              product={prod}
+                              isFavorite={favorites.includes(prod.id)}
+                              onToggleFavorite={handleToggleFavorite}
+                              onViewDetails={handleViewProduct}
+                              currentUser={currentUser}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 2. Suggested Stores Section (المتاجر المقترحة) */}
+                    <div className="space-y-3 pt-2">
                       <div className="flex items-center justify-between">
                         <button
                           onClick={() => setCurrentView('shops')}
@@ -2626,21 +2665,14 @@ export default function App() {
                         >
                           تصفح دليل المتاجر كاملة ←
                         </button>
-                        <h3 className="text-sm font-black text-slate-850 dark:text-white flex items-center gap-2">
+                        <h3 className="text-base font-black text-slate-850 dark:text-white flex items-center gap-2">
                           المتاجر المقترحة
                           <Store className="w-4.5 h-4.5 text-amber-500" />
                         </h3>
                       </div>
-                      
+
                       {(() => {
                         const featuredStores = users.filter((u) => u.is_featured === true || u.isFeatured === true);
-                        console.log('[DIAGNOSTIC] Featured stores on Home Page load (is_featured === true):',
-                          featuredStores.map(u => ({
-                            id: u.id,
-                            name: u.name,
-                            is_featured: u.is_featured ?? u.isFeatured
-                          }))
-                        );
                         if (featuredStores.length === 0) {
                           return (
                             <div className="p-6 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 rounded-2xl text-center text-xs text-slate-400 font-bold">
@@ -2658,11 +2690,11 @@ export default function App() {
                               return (
                                 <div 
                                   key={seller.id}
-                                  className="p-5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850/80 rounded-2xl hover:border-amber-500/20 transition-all flex items-center justify-between gap-4"
+                                  className="p-4 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850/80 rounded-2xl hover:border-amber-500/20 transition-all flex items-center justify-between gap-4"
                                 >
                                   <div className="flex items-center gap-3">
-                                    <img src={seller.avatar} className="w-12 h-12 rounded-full object-cover shrink-0 border border-slate-100 dark:border-slate-800" />
-                                    <div className="space-y-1 text-right">
+                                    <img src={seller.avatar} className="w-11 h-11 rounded-full object-cover shrink-0 border border-slate-100 dark:border-slate-800" />
+                                    <div className="space-y-0.5 text-right">
                                       <div className="flex items-center gap-1.5 flex-wrap">
                                         <h4 className="font-extrabold text-xs text-slate-800 dark:text-slate-100">{seller.name}</h4>
                                         {isVerified && (
@@ -2692,36 +2724,59 @@ export default function App() {
                       })()}
                     </div>
 
-                    {/* 2. All Active Products Section (سوق فيلوريا العام) */}
-                    <div className="space-y-4 pt-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-slate-400 font-bold">تصفح التشكيلة الكاملة من المعروضات</span>
-                        <h3 className="text-sm font-black text-slate-850 dark:text-white flex items-center gap-2">
-                          سوق فيلوريا العام
-                          <ShoppingBag className="w-4.5 h-4.5 text-amber-500" />
-                        </h3>
-                      </div>
+                    {/* 3. Category Sections (أقسام التصنيفات) */}
+                    <div className="space-y-8 pt-2">
+                      {activeCategories.map((cat) => {
+                        const catProducts = visibleProducts.filter(
+                          (p) =>
+                            String(p.categoryId) === String(cat.id) ||
+                            String(p.categoryId) === String(cat.id).replace('cat-', '')
+                        );
 
-                      {visibleProducts.length === 0 ? (
-                        <div className="p-12 text-center bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-slate-400 text-xs">
-                          لا توجد منتجات نشطة حالياً في السوق.
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                          {visibleProducts.map((prod) => (
-                            <ProductCard
-                              key={`market-all-${prod.id}`}
-                              product={prod}
-                              isFavorite={favorites.includes(prod.id)}
-                              onToggleFavorite={handleToggleFavorite}
-                              onViewDetails={handleViewProduct}
-                              currentUser={currentUser}
-                              users={users}
-                              onVisitStore={(seller) => navigateTo('profile', seller)}
-                            />
-                          ))}
-                        </div>
-                      )}
+                        if (catProducts.length === 0) return null;
+
+                        return (
+                          <div key={`cat-section-${cat.id}`} className="space-y-3">
+                            {/* Category Header */}
+                            <div className="flex items-center justify-between">
+                              <button
+                                onClick={() => setActiveCategoryId(cat.id)}
+                                className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 cursor-pointer"
+                              >
+                                <span>عرض الكل</span>
+                                <span className="text-xs font-mono">←</span>
+                              </button>
+
+                              <div className="flex items-center gap-2">
+                                <h3 className="text-base font-black text-slate-850 dark:text-white">
+                                  {cat.name}
+                                </h3>
+                                {cat.icon && (
+                                  typeof cat.icon === 'string' && cat.icon.length > 2 && !/\s/.test(cat.icon) ? (
+                                    <Icon name={cat.icon} className="w-4 h-4 text-amber-500" />
+                                  ) : (
+                                    <span className="text-base">{cat.icon}</span>
+                                  )
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Horizontal Scroll of Compact Cards */}
+                            <div className="flex gap-3 overflow-x-auto pb-4 pt-1 scrollbar-thin scrollbar-thumb-amber-500/20 hover:scrollbar-thumb-amber-500/40 scrollbar-track-transparent snap-x">
+                              {catProducts.map((prod) => (
+                                <CompactProductCard
+                                  key={`cat-${cat.id}-${prod.id}`}
+                                  product={prod}
+                                  isFavorite={favorites.includes(prod.id)}
+                                  onToggleFavorite={handleToggleFavorite}
+                                  onViewDetails={handleViewProduct}
+                                  currentUser={currentUser}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </>
                 )}
@@ -3127,13 +3182,6 @@ export default function App() {
         {/* VIEW 14: Seller Dashboard */}
         {currentView === 'seller-dashboard' && currentUser && (
           <div className="space-y-4">
-            <button
-              onClick={() => setCurrentView('market')}
-              className="text-xs text-slate-500 hover:text-slate-800 font-bold flex items-center gap-1 mb-2 cursor-pointer"
-            >
-              <ArrowLeft className="w-4 h-4 text-amber-500" />
-              <span>العودة للتصفح الرئيسي</span>
-            </button>
             <SellerDashboard
               currentUser={currentUser}
               onUpdateUser={handleUpdateUser}
@@ -3152,13 +3200,6 @@ export default function App() {
         {/* VIEW 15: Moderator Panel */}
         {currentView === 'moderator-panel' && currentUser && (
           <div className="space-y-4">
-            <button
-              onClick={() => setCurrentView('market')}
-              className="text-xs text-slate-500 hover:text-slate-800 font-bold flex items-center gap-1 mb-2 cursor-pointer"
-            >
-              <ArrowLeft className="w-4 h-4 text-amber-500" />
-              <span>العودة للتصفح الرئيسي</span>
-            </button>
             <ModeratorPanel
               currentUser={currentUser}
               reports={reports}
@@ -3181,13 +3222,6 @@ export default function App() {
         {/* VIEW 16: Admin Panel */}
         {currentView === 'admin-panel' && currentUser && (
           <div className="space-y-4">
-            <button
-              onClick={() => setCurrentView('market')}
-              className="text-xs text-slate-500 hover:text-slate-800 font-bold flex items-center gap-1 mb-2 cursor-pointer"
-            >
-              <ArrowLeft className="w-4 h-4 text-amber-500" />
-              <span>العودة للتصفح الرئيسي</span>
-            </button>
             <AdminPanel
               currentUser={currentUser}
               users={users}
@@ -3352,6 +3386,9 @@ export default function App() {
           isFollowing={followedSellers.includes(selectedProduct.sellerId)}
           users={users}
           onVisitStore={(seller) => navigateTo('profile', seller)}
+          allProducts={products}
+          favorites={favorites}
+          onSelectProduct={(p) => setSelectedProduct(p)}
         />
       )}
 

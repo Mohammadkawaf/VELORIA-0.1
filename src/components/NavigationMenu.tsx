@@ -145,6 +145,14 @@ export default function NavigationMenu({
               </button>
 
               <button 
+                onClick={() => handleLinkClick('categories')}
+                className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-850 transition-colors text-right"
+              >
+                <Layers className="w-4 h-4 text-slate-400 shrink-0" />
+                <span>التصنيفات والاقسام</span>
+              </button>
+
+              <button 
                 onClick={() => handleLinkClick('profile')}
                 className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-850 transition-colors text-right"
               >
