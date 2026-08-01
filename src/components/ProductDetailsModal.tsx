@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { motion } from 'motion/react';
 import { Product, User, Review, Order, Message, Report, UserBadge } from '../types';
 import { 
   X, ChevronLeft, ChevronRight, Star, MapPin, Send, 
@@ -81,6 +82,7 @@ export default function ProductDetailsModal({
   const [newRating, setNewRating] = useState(5);
   const [newComment, setNewComment] = useState('');
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
 
   // Chat states
   const [chatMessage, setChatMessage] = useState('');
@@ -150,16 +152,35 @@ export default function ProductDetailsModal({
     setActiveImageIndex((prev) => (prev - 1 + product.images.length) % product.images.length);
   };
 
+  const showDuplicateReviewNotice = () => {
+    setReviewError('لقد قمت بتقييم هذا المنتج مسبقاً، ولا يمكن إضافة أكثر من تقييم واحد لكل منتج.');
+    setTimeout(() => {
+      setReviewError(null);
+    }, 4500);
+  };
+
   const submitReview = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return;
     if (newComment.trim() === '') return;
 
+    // Check local reviews array first
+    const alreadyReviewed = productReviews.some(
+      (r) => r.reviewerId === currentUser.id
+    ) || (reviews || []).some(
+      (r) => r.reviewerId === currentUser.id && r.productId === product.id
+    );
+
+    if (alreadyReviewed) {
+      showDuplicateReviewNotice();
+      return;
+    }
+
     if (isSupabaseConfigured) {
       try {
         const exists = await supabaseService.checkProductRatingExists(product.id, currentUser.id);
         if (exists) {
-          alert("لقد قمت بتقييم هذا المنتج سابقاً، شكراً لمشاركتك تجربتك");
+          showDuplicateReviewNotice();
           return;
         }
 
@@ -254,17 +275,24 @@ export default function ProductDetailsModal({
   ).slice(0, 10);
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-50 dark:bg-slate-950 font-sans select-none text-slate-900 dark:text-slate-100 min-h-screen flex flex-col">
+    <motion.div
+      initial={{ opacity: 0, y: 18 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 18 }}
+      transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-50 dark:bg-slate-950 font-sans select-none text-slate-900 dark:text-slate-100 min-h-screen flex flex-col scroll-smooth"
+    >
       {/* 1. Header Bar */}
       <header className="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-100 dark:border-slate-800/80 px-4 py-3 flex items-center justify-between shadow-2xs">
         <div className="flex items-center gap-3 min-w-0">
-          <button
+          <motion.button
+            whileTap={{ scale: 0.92 }}
             onClick={onClose}
             className="p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-amber-500/15 text-slate-700 dark:text-slate-200 transition-all cursor-pointer shrink-0"
             title="الرجوع"
           >
             <ArrowRight className="w-5 h-5 text-amber-500" />
-          </button>
+          </motion.button>
           <h2 className="text-sm font-extrabold text-slate-900 dark:text-slate-100 truncate">
             {product.title}
           </h2>
@@ -272,21 +300,23 @@ export default function ProductDetailsModal({
 
         <div className="flex items-center gap-1.5 shrink-0">
           {currentUser && (
-            <button
+            <motion.button
+              whileTap={{ scale: 0.92 }}
               onClick={() => onToggleFavorite(product.id)}
               className="p-2 rounded-xl bg-slate-100 dark:bg-slate-850 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 transition-colors cursor-pointer"
               title={isFavorite ? 'إزالة من المفضلة' : 'إضافة للمفضلة'}
             >
               <Heart className={`w-5 h-5 ${isFavorite ? 'fill-rose-500 text-rose-500' : ''}`} />
-            </button>
+            </motion.button>
           )}
-          <button
+          <motion.button
+            whileTap={{ scale: 0.92 }}
             onClick={() => setIsShareModalOpen(true)}
             className="p-2 rounded-xl bg-slate-100 dark:bg-slate-850 hover:bg-slate-200 dark:hover:bg-slate-800 text-amber-500 transition-colors cursor-pointer"
             title="مشاركة المنتج"
           >
             <Share2 className="w-5 h-5" />
-          </button>
+          </motion.button>
         </div>
       </header>
 
@@ -395,22 +425,12 @@ export default function ProductDetailsModal({
           </div>
 
           {/* Quick Info Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/80">
+          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/80">
             <div className="p-2.5 bg-slate-50 dark:bg-slate-850 rounded-2xl flex items-center gap-2">
               <MapPin className="w-4 h-4 text-amber-500 shrink-0" />
               <div>
                 <p className="text-[10px] text-slate-400 font-bold">المدينة</p>
                 <p className="text-xs font-extrabold text-slate-800 dark:text-slate-200">{product.city || 'دمشق'}</p>
-              </div>
-            </div>
-
-            <div className="p-2.5 bg-slate-50 dark:bg-slate-850 rounded-2xl flex items-center gap-2">
-              <Tag className="w-4 h-4 text-amber-500 shrink-0" />
-              <div>
-                <p className="text-[10px] text-slate-400 font-bold">حالة المنتج</p>
-                <p className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
-                  {product.condition || 'جديد / ممتاز'}
-                </p>
               </div>
             </div>
 
@@ -501,7 +521,8 @@ export default function ProductDetailsModal({
 
             <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80">
               {onVisitStore && (
-                <button
+                <motion.button
+                  whileTap={{ scale: 0.96 }}
                   onClick={() => {
                     onVisitStore(seller);
                     onClose();
@@ -510,11 +531,12 @@ export default function ProductDetailsModal({
                 >
                   <Store className="w-4 h-4 text-amber-500" />
                   <span>زيارة المتجر</span>
-                </button>
+                </motion.button>
               )}
 
               {currentUser && currentUser.id !== seller.id && (
-                <button
+                <motion.button
+                  whileTap={{ scale: 0.96 }}
                   onClick={() => onToggleFollow(seller.id)}
                   className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold transition-all cursor-pointer ${
                     isFollowing
@@ -523,155 +545,115 @@ export default function ProductDetailsModal({
                   }`}
                 >
                   {isFollowing ? 'متابع ✓' : 'متابعة المتجر'}
-                </button>
+                </motion.button>
               )}
             </div>
           </div>
         )}
 
-        {/* 5. Tabs: Chat / Reviews / Report */}
+        {/* 5. Reviews & Comments (التقييمات والملاحظات) */}
         <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 overflow-hidden shadow-xs">
-          <div className="flex border-b border-slate-100 dark:border-slate-800">
-            <button
-              onClick={() => setActiveTab('info')}
-              className={`flex-1 py-3 text-center text-xs font-bold border-b-2 cursor-pointer transition-colors ${
-                activeTab === 'info'
-                  ? 'border-amber-500 text-amber-600 dark:text-amber-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-              }`}
-            >
-              التقييمات والملاحظات ({productReviews.length})
-            </button>
-            {!isOwnProduct && (
-              <button
-                onClick={() => setActiveTab('chat')}
-                className={`flex-1 py-3 text-center text-xs font-bold border-b-2 cursor-pointer transition-colors ${
-                  activeTab === 'chat'
-                    ? 'border-amber-500 text-amber-600 dark:text-amber-400'
-                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-              >
-                رسالة سريعة للبائع
-              </button>
-            )}
+          <div className="px-5 py-3.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+            <h3 className="text-xs font-black text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+              <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
+              <span>التقييمات والملاحظات</span>
+            </h3>
+            <span className="text-[11px] font-bold text-slate-400">({productReviews.length})</span>
           </div>
 
           <div className="p-4 sm:p-5">
-            {activeTab === 'info' && (
-              <div className="space-y-4">
-                {/* Reviews List */}
-                <div className="space-y-2.5 max-h-[250px] overflow-y-auto pr-1">
-                  {productReviews.length === 0 ? (
-                    <p className="text-xs text-slate-400 text-center py-4">
-                      لا توجد تقييمات لهذا المنتج بعد. كن أول من يضيف تقييماً!
-                    </p>
-                  ) : (
-                    productReviews.map((rev) => (
-                      <div key={rev.id} className="p-3 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-100 dark:border-slate-800/50">
-                        <div className="flex items-center justify-between mb-1">
-                          <div className="flex items-center gap-2">
-                            <img src={rev.reviewerAvatar} className="w-6 h-6 rounded-full object-cover" />
-                            <span className="font-bold text-xs text-slate-800 dark:text-slate-200">{rev.reviewerName}</span>
-                          </div>
-                          <div className="flex items-center gap-0.5 text-amber-500">
-                            {Array.from({ length: 5 }).map((_, idx) => (
-                              <Star
-                                key={idx}
-                                className={`w-3 h-3 ${idx < rev.rating ? 'fill-amber-500 text-amber-500' : 'text-slate-300 dark:text-slate-700'}`}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                        <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                          {rev.comment}
-                        </p>
-                        <span className="text-[9px] text-slate-400 mt-1 block">
-                          {new Date(rev.createdAt).toLocaleDateString('ar-SA')}
-                        </span>
-                      </div>
-                    ))
-                  )}
-                </div>
-
-                {/* Add Review Form */}
-                {currentUser ? (
-                  <form onSubmit={submitReview} className="border-t border-slate-100 dark:border-slate-800 pt-3">
-                    <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-2">إضافة تقييمك للمنتج:</h4>
-                    {reviewSubmitted && (
-                      <div className="p-2 bg-emerald-500/10 text-emerald-600 text-[11px] rounded mb-2 text-center">
-                        تم إضافة تقييمك بنجاح!
-                      </div>
-                    )}
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-[10px] text-slate-400">التقييم:</span>
-                      <div className="flex gap-1">
-                        {[1, 2, 3, 4, 5].map((star) => (
-                          <button
-                            key={star}
-                            type="button"
-                            onClick={() => setNewRating(star)}
-                            className="p-0.5 cursor-pointer"
-                          >
-                            <Star
-                              className={`w-5 h-5 ${
-                                star <= newRating ? 'fill-amber-500 text-amber-500' : 'text-slate-300 dark:text-slate-700'
-                              }`}
-                            />
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={newComment}
-                        onChange={(e) => setNewComment(e.target.value)}
-                        placeholder="اكتب تقييمك وصادقيتك في التعامل..."
-                        className="flex-1 text-xs p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800"
-                        required
-                      />
-                      <button
-                        type="submit"
-                        className="bg-amber-500 hover:bg-amber-600 text-slate-950 px-4 rounded-2xl text-xs font-extrabold cursor-pointer"
-                      >
-                        نشر التقييم
-                      </button>
-                    </div>
-                  </form>
+            <div className="space-y-4">
+              {/* Reviews List */}
+              <div className="space-y-2.5 max-h-[250px] overflow-y-auto pr-1">
+                {productReviews.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-4">
+                    لا توجد تقييمات لهذا المنتج بعد. كن أول من يضيف تقييماً!
+                  </p>
                 ) : (
-                  <div className="text-center py-2 text-[10px] text-slate-400 border-t border-slate-100 dark:border-slate-800/60 pt-3">
-                    ⚠️ يرجى تسجيل الدخول أو اختيار حساب عضو لإضافة تقييمك.
-                  </div>
+                  productReviews.map((rev) => (
+                    <div key={rev.id} className="p-3 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-100 dark:border-slate-800/50">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <img src={rev.reviewerAvatar} className="w-6 h-6 rounded-full object-cover" />
+                          <span className="font-bold text-xs text-slate-800 dark:text-slate-200">{rev.reviewerName}</span>
+                        </div>
+                        <div className="flex items-center gap-0.5 text-amber-500">
+                          {Array.from({ length: 5 }).map((_, idx) => (
+                            <Star
+                              key={idx}
+                              className={`w-3 h-3 ${idx < rev.rating ? 'fill-amber-500 text-amber-500' : 'text-slate-300 dark:text-slate-700'}`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                        {rev.comment}
+                      </p>
+                      <span className="text-[9px] text-slate-400 mt-1 block">
+                        {new Date(rev.createdAt).toLocaleDateString('ar-SA')}
+                      </span>
+                    </div>
+                  ))
                 )}
               </div>
-            )}
 
-            {/* Chat Tab */}
-            {activeTab === 'chat' && (
-              <div className="space-y-3">
-                {chatSuccess && (
-                  <div className="p-2.5 bg-emerald-500/10 text-emerald-600 text-xs rounded-xl text-center">
-                    تم تسليم رسالتك للبائع بنجاح!
+              {/* Add Review Form */}
+              {currentUser ? (
+                <form onSubmit={submitReview} className="border-t border-slate-100 dark:border-slate-800 pt-3">
+                  <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-2">إضافة تقييمك للمنتج:</h4>
+                  {reviewSubmitted && (
+                    <div className="p-2.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-bold rounded-2xl mb-2 text-center border border-emerald-500/20">
+                      تم إضافة تقييمك بنجاح!
+                    </div>
+                  )}
+                  {reviewError && (
+                    <div className="p-3 bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/30 text-amber-700 dark:text-amber-400 text-xs font-bold rounded-2xl mb-2 flex items-center gap-2 shadow-xs transition-all">
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-amber-500" />
+                      <span>{reviewError}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-[10px] text-slate-400">التقييم:</span>
+                    <div className="flex gap-1">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <button
+                          key={star}
+                          type="button"
+                          onClick={() => setNewRating(star)}
+                          className="p-0.5 cursor-pointer"
+                        >
+                          <Star
+                            className={`w-5 h-5 ${
+                              star <= newRating ? 'fill-amber-500 text-amber-500' : 'text-slate-300 dark:text-slate-700'
+                            }`}
+                          />
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                )}
-                <form onSubmit={submitChat} className="flex gap-2">
-                  <input
-                    type="text"
-                    value={chatMessage}
-                    onChange={(e) => setChatMessage(e.target.value)}
-                    placeholder="اكتب استفسارك للبائع..."
-                    className="flex-1 text-xs p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800"
-                    required
-                  />
-                  <button
-                    type="submit"
-                    className="bg-amber-500 hover:bg-amber-600 text-slate-950 px-4 rounded-2xl flex items-center justify-center cursor-pointer"
-                  >
-                    <Send className="w-4 h-4" />
-                  </button>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newComment}
+                      onChange={(e) => setNewComment(e.target.value)}
+                      placeholder="اكتب تقييمك وصادقيتك في التعامل..."
+                      className="flex-1 text-xs p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800"
+                      required
+                    />
+                    <button
+                      type="submit"
+                      className="bg-amber-500 hover:bg-amber-600 text-slate-950 px-4 rounded-2xl text-xs font-extrabold cursor-pointer"
+                    >
+                      نشر التقييم
+                    </button>
+                  </div>
                 </form>
-              </div>
-            )}
+              ) : (
+                <div className="text-center py-2 text-[10px] text-slate-400 border-t border-slate-100 dark:border-slate-800/60 pt-3">
+                  ⚠️ يرجى تسجيل الدخول أو اختيار حساب عضو لإضافة تقييمك.
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -769,13 +751,14 @@ export default function ProductDetailsModal({
               المنتج مباع وغير متاح للطلب 🤝
             </div>
           ) : (
-            <button
+            <motion.button
+              whileTap={{ scale: 0.97 }}
               onClick={() => setIsOrderModalOpen(true)}
               className="w-full bg-amber-500 hover:bg-amber-600 active:scale-[0.98] text-slate-950 font-black py-3.5 px-4 rounded-2xl text-xs sm:text-sm transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer text-center"
             >
               <ShoppingBag className="w-4 h-4" />
               <span>اطلب الآن</span>
-            </button>
+            </motion.button>
           )}
         </div>
       </div>
@@ -858,6 +841,6 @@ export default function ProductDetailsModal({
           });
         }}
       />
-    </div>
+    </motion.div>
   );
 }

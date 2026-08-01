@@ -3,11 +3,11 @@ import { Product, User, Category, Review, Order, Message, Report, UserBadge, Not
 import Navbar from './components/Navbar';
 import HideProductModal from './components/HideProductModal';
 import AdminPromptModal from './components/AdminPromptModal';
-import RoleSwitcher from './components/RoleSwitcher';
 import ProductCard from './components/ProductCard';
 import CompactProductCard from './components/CompactProductCard';
 import Icon from './components/Icons';
 import ProductDetailsModal from './components/ProductDetailsModal';
+import { ProductCardSkeleton, CompactProductCardSkeleton } from './components/ProductCardSkeleton';
 import SellerDashboard from './components/SellerDashboard';
 import ModeratorPanel from './components/ModeratorPanel';
 import AdminPanel from './components/AdminPanel';
@@ -997,19 +997,6 @@ export default function App() {
     setIsChatOpen(false);
     setSelectedProduct(null);
     setSelectedProfileUser(null);
-  };
-
-  // Adjust active view on user change
-  const handleUserChange = (newUser: User | null) => {
-    if (newUser === null) {
-      handleLogout();
-    } else {
-      setCurrentUser(newUser);
-      setCurrentView('market');
-      setIsChatOpen(false);
-      setSelectedProduct(null);
-      setSelectedProfileUser(null);
-    }
   };
 
   const handleSubmitContactMessage = async (msg: Omit<ContactMessage, 'id' | 'createdAt' | 'status'>) => {
@@ -2090,14 +2077,10 @@ export default function App() {
           navigateTo(view, view === 'profile' ? currentUser : null);
         }}
         onLogout={() => {
-          handleUserChange(null);
-          setCurrentView('market');
+          handleLogout();
         }}
         settings={appSettings}
       />
-
-      {/* Role and Account Selector Panel */}
-      <RoleSwitcher currentUser={currentUser} users={users} onUserChange={handleUserChange} />
 
       {/* Primary Navigation Header */}
       <Navbar
@@ -2583,7 +2566,13 @@ export default function App() {
             {/* View Dispatcher inside Market */}
             {activeMarketTab === 'all' && (activeCategoryId || searchTerm.trim() !== '' || showFavoritesOnly || isAdvancedFilteringActive) ? (
               // Search / Categorized product list
-              filteredProducts.length === 0 ? (
+              isLoadingProducts ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                  {Array.from({ length: 8 }).map((_, idx) => (
+                    <ProductCardSkeleton key={`skeleton-grid-${idx}`} />
+                  ))}
+                </div>
+              ) : filteredProducts.length === 0 ? (
                 <div className="text-center py-20 bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800/60 p-6 space-y-3">
                   <ShoppingBag className="w-12 h-12 text-slate-300 mx-auto" />
                   <h3 className="font-extrabold text-slate-700 dark:text-slate-300">لم يتم العثور على نتائج</h3>

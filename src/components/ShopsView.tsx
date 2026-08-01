@@ -1,4 +1,5 @@
 import React from 'react';
+import { motion } from 'motion/react';
 import { User, Product } from '../types';
 import { Store, Check, Flame, Star, Award, ShieldCheck, ArrowLeft, Heart, Sparkles, MessageCircle } from 'lucide-react';
 
@@ -143,16 +144,18 @@ export default function ShopsView({
 
         {/* Action Buttons */}
         <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/60">
-          <button
+          <motion.button
+            whileTap={{ scale: 0.97 }}
             onClick={() => onVisitShop(seller)}
             className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black py-1.5 rounded-xl text-[10px] cursor-pointer text-center flex items-center justify-center gap-1 transition-all"
           >
             <Store className="w-3.5 h-3.5" />
             <span>زيارة المتجر</span>
-          </button>
+          </motion.button>
 
           {currentUser && currentUser.id !== seller.id ? (
-            <button
+            <motion.button
+              whileTap={{ scale: 0.97 }}
               onClick={() => onFollow(seller.id)}
               className={`font-bold py-1.5 rounded-xl text-[10px] cursor-pointer text-center transition-all ${
                 isFollowing
@@ -161,14 +164,15 @@ export default function ShopsView({
               }`}
             >
               {isFollowing ? 'إلغاء المتابعة' : 'متابعة المتجر'}
-            </button>
+            </motion.button>
           ) : !currentUser ? (
-            <button
+            <motion.button
+              whileTap={{ scale: 0.97 }}
               onClick={() => alert('الرجاء تسجيل الدخول لتتمكن من متابعة المتاجر وحفظ الإشعارات!')}
               className="bg-slate-150 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-600 dark:text-slate-300 font-bold py-1.5 rounded-xl text-[10px]"
             >
               متابعة
-            </button>
+            </motion.button>
           ) : (
             <span className="text-[9px] text-slate-400 font-bold text-center flex items-center justify-center bg-slate-50 dark:bg-slate-950 rounded-xl">
               متجري الخاص

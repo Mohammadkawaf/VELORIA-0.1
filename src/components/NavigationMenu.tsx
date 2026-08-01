@@ -1,4 +1,5 @@
 import React from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { User, AppSettings } from '../types';
 import { 
   X, Home, Layers, Store, LogIn, UserPlus, FileText, ShieldAlert, 
@@ -32,15 +33,27 @@ export default function NavigationMenu({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden flex justify-start font-sans">
-      {/* Backdrop */}
-      <div 
-        className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs transition-opacity"
-        onClick={onClose}
-      />
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-50 overflow-hidden flex justify-start font-sans">
+          {/* Backdrop */}
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs"
+            onClick={onClose}
+          />
 
-      {/* Drawer Body */}
-      <div className="relative w-full max-w-xs bg-white dark:bg-slate-900 h-full shadow-2xl flex flex-col border-r border-slate-100 dark:border-slate-800 animate-slide-in-right overflow-hidden">
+          {/* Drawer Body */}
+          <motion.div
+            initial={{ x: '-100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '-100%' }}
+            transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+            className="relative w-full max-w-xs bg-white dark:bg-slate-900 h-full shadow-2xl flex flex-col border-r border-slate-100 dark:border-slate-800 overflow-hidden z-10"
+          >
         {/* Header */}
         <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-850 shrink-0">
           <span className="text-lg font-black text-amber-500 flex items-center gap-1.5">
@@ -329,7 +342,9 @@ export default function NavigationMenu({
             منصة فيلوريا المفتوحة 👑 جميع الحقوق محفوظة © ٢٠٢٦
           </p>
         </div>
-      </div>
+      </motion.div>
     </div>
+      )}
+    </AnimatePresence>
   );
 }

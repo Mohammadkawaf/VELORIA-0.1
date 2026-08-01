@@ -1,3 +1,4 @@
+import { motion } from 'motion/react';
 import { Product, User, UserBadge } from '../types';
 import { Star, MapPin, Heart, Flame, ShieldCheck, Award, Store, Eye } from 'lucide-react';
 
@@ -59,7 +60,11 @@ export default function ProductCard({
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-2xl overflow-hidden border border-slate-100 dark:border-slate-800/60 shadow-sm hover:shadow-md hover:border-amber-500/30 transition-all duration-300 flex flex-col group h-full">
+    <motion.div
+      whileTap={{ scale: 0.97 }}
+      transition={{ duration: 0.15 }}
+      className="bg-white dark:bg-slate-900 rounded-2xl overflow-hidden border border-slate-100 dark:border-slate-800/60 shadow-sm hover:shadow-md hover:border-amber-500/30 transition-shadow duration-300 flex flex-col group h-full"
+    >
       {/* Product Image Section */}
       <div className="relative aspect-[4/3] bg-slate-100 dark:bg-slate-950 overflow-hidden">
         <img
@@ -180,6 +185,6 @@ export default function ProductCard({
           </div>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }

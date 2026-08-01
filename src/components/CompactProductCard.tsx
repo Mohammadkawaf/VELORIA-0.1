@@ -1,4 +1,5 @@
 import React from 'react';
+import { motion } from 'motion/react';
 import { Product, User } from '../types';
 import { Heart, MapPin } from 'lucide-react';
 
@@ -18,9 +19,13 @@ export default function CompactProductCard({
   currentUser,
 }: CompactProductCardProps) {
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0, x: 12 }}
+      animate={{ opacity: 1, x: 0 }}
+      whileTap={{ scale: 0.97 }}
+      transition={{ duration: 0.2 }}
       onClick={() => onViewDetails(product)}
-      className="w-32 sm:w-36 lg:w-40 shrink-0 bg-white dark:bg-slate-900 rounded-xl overflow-hidden border border-slate-100 dark:border-slate-800/80 shadow-2xs hover:shadow-md hover:border-amber-500/30 transition-all duration-300 flex flex-col group cursor-pointer select-none"
+      className="w-32 sm:w-36 lg:w-40 shrink-0 bg-white dark:bg-slate-900 rounded-xl overflow-hidden border border-slate-100 dark:border-slate-800/80 shadow-2xs hover:shadow-md hover:border-amber-500/30 transition-shadow duration-300 flex flex-col group cursor-pointer select-none"
     >
       {/* Product Image Section */}
       <div className="relative aspect-[4/3] bg-slate-100 dark:bg-slate-950 overflow-hidden">
@@ -85,6 +90,6 @@ export default function CompactProductCard({
           </div>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
