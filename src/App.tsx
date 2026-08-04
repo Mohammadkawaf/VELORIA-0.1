@@ -77,6 +77,13 @@ export default function App() {
   });
 
   useEffect(() => {
+    document.documentElement.lang = 'ar';
+    document.documentElement.dir = 'rtl';
+    document.documentElement.setAttribute('translate', 'no');
+    document.documentElement.classList.add('notranslate');
+    document.body.setAttribute('translate', 'no');
+    document.body.classList.add('notranslate');
+
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
     } else {
