@@ -1073,8 +1073,16 @@ export default function App() {
   const handleToggleFollow = async (sellerId: string) => {
     if (!currentUser) return;
 
+    alert("STEP 1");
+
     const isCurrentlyFollowing = followedSellers.includes(sellerId);
     const shouldFollow = !isCurrentlyFollowing;
+
+    alert("STEP 2");
+
+    alert("Current User ID: " + currentUser.id);
+    alert("Seller ID: " + sellerId);
+    alert("Should Follow: " + shouldFollow);
 
     console.log(`[Follows] handleToggleFollow triggered for sellerId: ${sellerId}. Currently following: ${isCurrentlyFollowing}. Action: ${shouldFollow ? 'FOLLOW (INSERT)' : 'UNFOLLOW (DELETE)'}`);
 
@@ -1103,43 +1111,51 @@ export default function App() {
       });
     }
 
-    const isUUIDFollower = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(currentUser.id);
-    const isUUIDFollowing = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sellerId);
+    try {
+      alert("STEP 3 BEFORE SUPABASE");
 
-    if (isSupabaseConfigured && isUUIDFollower && isUUIDFollowing) {
-      try {
-        console.log(`[Follows] Executing database toggleFollow on Supabase... Action: ${shouldFollow ? 'INSERT' : 'DELETE'}`);
-        await supabaseService.toggleFollow(currentUser.id, sellerId, shouldFollow);
-        console.log(`[Follows] Database toggleFollow completed successfully.`);
+      await supabaseService.toggleFollow(
+        currentUser.id,
+        sellerId,
+        shouldFollow
+      );
 
-        // Re-fetch exact count from Supabase to ensure absolute accuracy
-        const exactCount = await supabaseService.getFollowersCount(sellerId);
-        console.log(`[Follows] Exact follower count from DB for ${sellerId}: ${exactCount}`);
+      alert("STEP 4 AFTER SUPABASE");
 
-        setUsers((prevUsers) =>
-          prevUsers.map((u) => (u.id === sellerId ? { ...u, followersCount: exactCount } : u))
-        );
-        if (selectedProfileUser && selectedProfileUser.id === sellerId) {
-          setSelectedProfileUser((prev) => (prev ? { ...prev, followersCount: exactCount } : prev));
-        }
-      } catch (err) {
-        console.error('[Follows] Error executing database toggleFollow:', err);
-        // Revert local state if database call fails
-        setFollowedSellers((prev) =>
-          isCurrentlyFollowing ? [...prev, sellerId] : prev.filter((id) => id !== sellerId)
-        );
-        setUsers((prevUsers) =>
-          prevUsers.map((u) => {
-            if (u.id === sellerId) {
-              const revertedCount = Math.max(0, (u.followersCount || 0) + (shouldFollow ? -1 : 1));
-              return { ...u, followersCount: revertedCount };
-            }
-            return u;
-          })
-        );
+      // Re-fetch exact count from Supabase to ensure absolute accuracy
+      const exactCount = await supabaseService.getFollowersCount(sellerId);
+      console.log(`[Follows] Exact follower count from DB for ${sellerId}: ${exactCount}`);
+
+      setUsers((prevUsers) =>
+        prevUsers.map((u) => (u.id === sellerId ? { ...u, followersCount: exactCount } : u))
+      );
+      if (selectedProfileUser && selectedProfileUser.id === sellerId) {
+        setSelectedProfileUser((prev) => (prev ? { ...prev, followersCount: exactCount } : prev));
       }
-    } else {
-      console.log(`[Follows] Local fallback mode used for user follow toggle.`);
+    } catch (err) {
+      alert("STEP 5 ERROR");
+
+      alert(
+        typeof err === "object"
+          ? JSON.stringify(err)
+          : String(err)
+      );
+
+      console.error(err);
+
+      // Revert local state if database call fails
+      setFollowedSellers((prev) =>
+        isCurrentlyFollowing ? [...prev, sellerId] : prev.filter((id) => id !== sellerId)
+      );
+      setUsers((prevUsers) =>
+        prevUsers.map((u) => {
+          if (u.id === sellerId) {
+            const revertedCount = Math.max(0, (u.followersCount || 0) + (shouldFollow ? -1 : 1));
+            return { ...u, followersCount: revertedCount };
+          }
+          return u;
+        })
+      );
     }
   };
 
