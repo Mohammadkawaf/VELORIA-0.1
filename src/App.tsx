@@ -1073,16 +1073,8 @@ export default function App() {
   const handleToggleFollow = async (sellerId: string) => {
     if (!currentUser) return;
 
-    alert("STEP 1");
-
     const isCurrentlyFollowing = followedSellers.includes(sellerId);
     const shouldFollow = !isCurrentlyFollowing;
-
-    alert("STEP 2");
-
-    alert("Current User ID: " + currentUser.id);
-    alert("Seller ID: " + sellerId);
-    alert("Should Follow: " + shouldFollow);
 
     console.log(`[Follows] handleToggleFollow triggered for sellerId: ${sellerId}. Currently following: ${isCurrentlyFollowing}. Action: ${shouldFollow ? 'FOLLOW (INSERT)' : 'UNFOLLOW (DELETE)'}`);
 
@@ -1112,15 +1104,11 @@ export default function App() {
     }
 
     try {
-      alert("STEP 3 BEFORE SUPABASE");
-
       await supabaseService.toggleFollow(
         currentUser.id,
         sellerId,
         shouldFollow
       );
-
-      alert("STEP 4 AFTER SUPABASE");
 
       // Re-fetch exact count from Supabase to ensure absolute accuracy
       const exactCount = await supabaseService.getFollowersCount(sellerId);
@@ -1133,15 +1121,7 @@ export default function App() {
         setSelectedProfileUser((prev) => (prev ? { ...prev, followersCount: exactCount } : prev));
       }
     } catch (err) {
-      alert("STEP 5 ERROR");
-
-      alert(
-        typeof err === "object"
-          ? JSON.stringify(err)
-          : String(err)
-      );
-
-      console.error(err);
+      console.error('[Follows] Error executing database toggleFollow:', err);
 
       // Revert local state if database call fails
       setFollowedSellers((prev) =>
