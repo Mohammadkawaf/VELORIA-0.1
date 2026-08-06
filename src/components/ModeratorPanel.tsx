@@ -549,11 +549,7 @@ export default function ModeratorPanel({
                         <td className="p-3">
                           {p.status !== 'hidden' ? (
                             <button
-                              onClick={() => {
-                                console.log("Hide button clicked");
-                                console.log("calling handleUpdateProductStatus");
-                                onUpdateProductStatus(p.id, 'hidden');
-                              }}
+                              onClick={() => onUpdateProductStatus(p.id, 'hidden')}
                               className="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 text-[10px] font-bold rounded-lg cursor-pointer"
                               title="إخفاء المنتج المخالف فوراً"
                             >

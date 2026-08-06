@@ -26,11 +26,6 @@ export default function OrderModal({
   const [success, setSuccess] = useState<boolean>(false);
 
   const sellerProfile = seller;
-  console.log("seller =", seller);
-  console.log("sellerProfile =", sellerProfile);
-  console.log("seller.whatsapp =", seller?.whatsapp);
-  console.log("sellerProfile.whatsapp =", sellerProfile?.whatsapp);
-  console.log("product.sellerId =", product.sellerId);
 
   if (!isOpen) return null;
 
@@ -74,32 +69,14 @@ export default function OrderModal({
 
     try {
       // 1. Save order to the database first
-      console.log("1- بدء إنشاء الطلب");
       const createdOrder = await onConfirmOrder({
         quantity,
         buyerMessage: buyerMessage.trim()
       });
-      console.log("2- الطلب تم إنشاؤه", createdOrder);
-
-      console.log("3- قبل تحديث حالة المنتج");
-      try {
-        // No explicit product status update happens inside OrderModal.tsx directly,
-        // but wrapping a potential placeholder block inside a try-catch as requested by user.
-        console.log("4- بعد تحديث حالة المنتج");
-      } catch (error: any) {
-        console.error("ERROR =", error);
-      }
 
       setSuccess(true);
 
       // 2. Format and open WhatsApp message after successful save
-      const sellerProfile = seller;
-      const sellerWhatsapp = seller?.whatsapp || seller?.whatsapp_number || '';
-      console.log("sellerId =", product.sellerId);
-      console.log("sellerProfile =", sellerProfile);
-      console.log("sellerWhatsapp =", sellerWhatsapp);
-      console.log("product.whatsapp =", (product as any).whatsapp);
-
       const waNum = getWhatsAppNumber();
       if (!waNum) {
         alert('تم حفظ الطلب بنجاح في النظام! ولكن لم يقم التاجر بإضافة رقم واتساب لإرسال الرسالة.');
@@ -121,23 +98,17 @@ export default function OrderModal({
         `رسالة المشتري: ${buyerMessage.trim()}\n` +
         `رابط المنتج: ${productLink}`;
 
-      console.log("5- قبل فتح واتساب");
-      const waUrlExpr = `https://wa.me/${waNum}?text=${encodeURIComponent(messageText)}`;
-      console.log(waUrlExpr);
-      const waUrl = waUrlExpr;
+      const waUrl = `https://wa.me/${waNum}?text=${encodeURIComponent(messageText)}`;
       
-      // Open WhatsApp directly without setTimeout to reduce chance of popup blocking, and use a bulletproof fallback if blocked
+      // Open WhatsApp directly
       let opened = false;
       try {
         const popup = window.open(waUrl, '_blank');
-        if (popup == null) {
-          console.log("Popup Blocked (null returned)");
-        } else {
-          console.log("Popup Opened successfully");
+        if (popup) {
           try {
             popup.focus();
           } catch (focusErr) {
-            console.warn("Could not focus popup window:", focusErr);
+            // Ignore focus error
           }
           opened = true;
         }
@@ -149,7 +120,6 @@ export default function OrderModal({
         // Safe fallback for iframes/popup blockers: navigate directly in current window
         window.location.href = waUrl;
       }
-      console.log("6- بعد فتح واتساب");
       onClose();
 
     } catch (err: any) {

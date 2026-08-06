@@ -471,49 +471,31 @@ export const supabaseService = {
 
     // 5. Apply sorting
     const sort = options?.sortBy || 'newest';
-    console.log(`Received Sort = ${sort}`);
     switch (sort) {
       case 'oldest':
-        console.log('Entered oldest');
         query = query.order('created_at', { ascending: true });
         break;
       case 'price-high':
       case 'price-desc':
-        console.log('Entered price-desc');
         query = query.order('price', { ascending: false });
         break;
       case 'price-low':
       case 'price-asc':
-        console.log('Entered price-asc');
         query = query.order('price', { ascending: true });
         break;
       case 'top-rated':
-        console.log('Entered top-rated');
         query = query.order('rating_average', { ascending: false, nullsFirst: false });
         break;
       case 'most-viewed':
-        console.log('Entered most-viewed');
         query = query.order('views_count', { ascending: false, nullsFirst: false });
         break;
       case 'newest':
       default:
-        console.log('Entered newest');
         query = query.order('created_at', { ascending: false });
         break;
     }
 
-    console.log('Executing Query...');
     const { data, error } = await query;
-
-    if (data) {
-      console.log('First 5 queried products:', data.slice(0, 5).map((p: any) => ({
-        title: p.title,
-        price: p.price,
-        views_count: p.views_count,
-        rating_average: p.rating_average,
-        created_at: p.created_at
-      })));
-    }
 
     if (error) {
       console.warn('Error fetching products with query builder from Supabase:', error);
@@ -568,18 +550,6 @@ export const supabaseService = {
       city: product.city || null
     };
 
-    console.log('--- [createProduct START] ---');
-    console.log('1- البيانات المرسلة إلى insert:', insertPayload);
-    console.log('2- قيمة user_id:', product.sellerId);
-    console.log('3- قيمة category_id:', finalCategoryId);
-
-    console.log("========== CREATE PRODUCT DEBUG ==========");
-    console.log("Received Product =", product);
-    console.log("Product.city =", product.city);
-    console.log("Insert Payload =", insertPayload);
-    console.log("Insert Payload.city =", insertPayload.city);
-    console.log("==========================================");
-
     // Insert Product core
     const { data: prodData, error: prodError } = await supabase
       .from('products')
@@ -587,34 +557,9 @@ export const supabaseService = {
       .select()
       .single();
 
-    console.log("Insert Result =", prodData);
-    console.log("Insert Error =", prodError);
-
-    console.log('4- نتيجة insert كاملة:', { prodData, prodError });
-    console.log('5- قيمة prodData:', prodData);
-    console.log('6- قيمة prodError كاملة كما تعود من Supabase:', prodError);
-
-    if (prodData) {
-      console.log('7- نجح الإدخال! UUID المنتج الجديد:', prodData.id);
-    }
-    if (prodError) {
-      console.log('8- فشل الإدخال! رسالة الخطأ الحقيقية القادمة من Supabase:', prodError.message || prodError);
-    }
-    console.log('--- [createProduct END] ---');
-
     if (prodError) throw prodError;
 
     // Insert Product Images
-    const imageUrls = product.images;
-    console.log("Uploaded image URLs:", imageUrls);
-
-    console.log("product.images before condition:", product.images);
-    if (product.images) {
-      console.log("product.images.length:", product.images.length);
-    } else {
-      console.log("product.images is undefined or null");
-    }
-
     if (product.images && product.images.length > 0) {
       const imagePayloads = product.images.map((url, idx) => ({
         product_id: prodData.id,
@@ -622,17 +567,11 @@ export const supabaseService = {
         sort_order: idx
       }));
 
-      console.log("imagePayloads =", imagePayloads);
-
       const { error: imgError } = await supabase
         .from('product_images')
         .insert(imagePayloads);
 
-      console.log("imgError =", imgError);
-
       if (imgError) console.warn('Error uploading product images metadata:', imgError);
-    } else {
-      console.log("SKIPPED IMAGE INSERT BECAUSE product.images IS EMPTY");
     }
 
     return {
@@ -722,25 +661,14 @@ export const supabaseService = {
 
   // Followers
   async getFollowedSellers(userId: string): Promise<string[]> {
-    console.log('[Followers DB Diagnostic] Starting followers request...');
-    console.log('[Followers DB Diagnostic] VITE_SUPABASE_URL:', (import.meta as any).env?.VITE_SUPABASE_URL || supabaseUrl);
-    console.log('[Followers DB Diagnostic] Supabase Client Initialized:', Boolean(supabase));
-    console.log('[Followers DB Diagnostic] userId:', userId);
-    console.log('[Followers DB Diagnostic] Time:', new Date().toISOString());
-    console.log('[Followers DB Diagnostic] Table:', 'followers');
-
     if (!supabase) {
-      console.warn('[Followers DB Diagnostic] Supabase client is null');
       return [];
     }
 
     const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
     if (!isUUID) {
-      console.warn('[Followers DB Diagnostic] userId is not a valid UUID:', userId);
       return [];
     }
-
-    console.log('[Followers DB] Fetching followed sellers from followers table for follower_id:', userId);
 
     try {
       const { data, error } = await supabase
@@ -749,35 +677,11 @@ export const supabaseService = {
         .eq('follower_id', userId);
 
       if (error) {
-        console.error('[Followers DB Diagnostic] Supabase Error detected:', {
-          code: error.code,
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          navigatorOnline: typeof navigator !== 'undefined' ? navigator.onLine : undefined,
-          origin: typeof window !== 'undefined' ? window.location.origin : undefined,
-          errorType: 'Supabase Error'
-        });
         throw error;
       }
 
-      const followedIds = (data || []).map((f: any) => f.following_id);
-      console.log('[Followers DB] Followed sellers loaded from DB:', followedIds);
-      return followedIds;
+      return (data || []).map((f: any) => f.following_id);
     } catch (err: any) {
-      const isNetworkError = err instanceof TypeError || err?.name === 'TypeError' || err?.message?.includes('Failed to fetch');
-      console.error('[Followers DB Diagnostic] Request failed:', {
-        isNetworkError,
-        errorType: err?.name || typeof err,
-        errorMessage: err?.message || String(err),
-        stack: err?.stack,
-        navigatorOnline: typeof navigator !== 'undefined' ? navigator.onLine : undefined,
-        origin: typeof window !== 'undefined' ? window.location.origin : undefined,
-        code: err?.code,
-        details: err?.details,
-        hint: err?.hint,
-        category: isNetworkError ? 'Network Error' : (err?.code ? 'Supabase Error' : 'Unknown Error')
-      });
       throw err;
     }
   },
@@ -787,24 +691,19 @@ export const supabaseService = {
     const isFollowerUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(followerId);
     const isFollowingUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(followingId);
     if (!isFollowerUUID || !isFollowingUUID) {
-      console.warn('[Followers DB] Skipping DB toggleFollow because IDs are not valid UUIDs:', { followerId, followingId });
       return;
     }
 
     if (shouldFollow) {
-      console.log('[Followers DB] BEFORE INSERT into followers table:', { follower_id: followerId, following_id: followingId });
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('followers')
         .insert({ follower_id: followerId, following_id: followingId })
         .select();
 
       if (error && error.code !== '23505') {
-        console.error('[Followers DB] INSERT error in followers table:', error);
         throw error;
       }
-      console.log('[Followers DB] AFTER INSERT into followers table successful:', data);
     } else {
-      console.log('[Followers DB] BEFORE DELETE from followers table:', { follower_id: followerId, following_id: followingId });
       const { error } = await supabase
         .from('followers')
         .delete()
@@ -812,10 +711,8 @@ export const supabaseService = {
         .eq('following_id', followingId);
 
       if (error) {
-        console.error('[Followers DB] DELETE error in followers table:', error);
         throw error;
       }
-      console.log('[Followers DB] AFTER DELETE from followers table successful.');
     }
   },
 
@@ -823,30 +720,24 @@ export const supabaseService = {
     if (!supabase) return 0;
     const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(followingId);
     if (!isUUID) return 0;
-    console.log('[Followers DB] Fetching followers count for following_id:', followingId);
     const { count, error } = await supabase
       .from('followers')
       .select('*', { count: 'exact', head: true })
       .eq('following_id', followingId);
 
     if (error) {
-      console.error('[Followers DB] Error counting followers:', error);
       return 0;
     }
-    const finalCount = count ?? 0;
-    console.log(`[Followers DB] Followers count for ${followingId} is: ${finalCount}`);
-    return finalCount;
+    return count ?? 0;
   },
 
   async getAllFollowersCounts(): Promise<Record<string, number>> {
     if (!supabase) return {};
-    console.log('[Followers DB] Fetching all followers to compute followers counts...');
     const { data, error } = await supabase
       .from('followers')
       .select('following_id');
 
     if (error) {
-      console.error('[Followers DB] Error fetching all followers:', error);
       return {};
     }
     const counts: Record<string, number> = {};
@@ -855,7 +746,6 @@ export const supabaseService = {
         counts[row.following_id] = (counts[row.following_id] || 0) + 1;
       }
     });
-    console.log('[Followers DB] All store followers counts computed:', counts);
     return counts;
   },
 
@@ -964,12 +854,6 @@ export const supabaseService = {
 
     const { data: userData } = await supabase.auth.getUser();
     const currentUserId = userData?.user?.id || null;
-
-    console.log('--- updateOrderStatus Runtime Debug Logs ---');
-    console.log('orderId:', orderId);
-    console.log('updatePayload:', JSON.stringify(updatePayload, null, 2));
-    console.log('currentUser.id / auth.uid():', currentUserId);
-    console.log('---------------------------------------------');
 
     const { error } = await supabase
       .from('orders')
@@ -1161,17 +1045,6 @@ export const supabaseService = {
         if (row.x_page !== undefined && row.x_page !== null) {
           settings.socialX = String(row.x_page);
         }
-
-        console.log('[AppSettings] Loaded Settings from DB', {
-          platform_name: settings.platformName,
-          donations_enabled: settings.donationEnabled,
-          socialFacebook: settings.socialFacebook,
-          socialInstagram: settings.socialInstagram,
-          socialTelegram: settings.socialTelegram,
-          socialYoutube: settings.socialYoutube,
-          socialTiktok: settings.socialTiktok,
-          socialX: settings.socialX
-        });
       }
     } catch (err: any) {
       console.warn('Error loading settings from Supabase:', err.message);
@@ -1220,15 +1093,6 @@ export const supabaseService = {
         updated_at: new Date().toISOString()
       };
 
-      console.log('[Branding] BEFORE UPDATE', {
-        platform_name: payload.platform_name,
-        platform_logo: payload.platform_logo,
-        platform_description: payload.platform_description,
-        current_version: payload.current_version,
-        copyright_text: payload.copyright_text,
-        website_url: payload.website_url
-      });
-
       if (existingRows && existingRows.length > 0) {
         const firstRow = existingRows[0];
         let updateQuery = supabase.from('application_settings').update(payload);
@@ -1250,15 +1114,6 @@ export const supabaseService = {
           throw insertError;
         }
       }
-
-      console.log('[Branding] AFTER UPDATE', {
-        platform_name: payload.platform_name,
-        platform_logo: payload.platform_logo,
-        platform_description: payload.platform_description,
-        current_version: payload.current_version,
-        copyright_text: payload.copyright_text,
-        website_url: payload.website_url
-      });
     } catch (err: any) {
       console.warn('Failed to update app settings in Supabase:', err.message);
       throw err;
@@ -1490,8 +1345,6 @@ export const supabaseService = {
       created_at: new Date().toISOString()
     };
     
-    console.log('--- addProductRating Insert Object ---', JSON.stringify(insertObj, null, 2));
-
     const { error } = await supabase
       .from('product_ratings')
       .insert(insertObj);
@@ -1585,8 +1438,6 @@ export const supabaseService = {
           )
         `)
         .eq("product_id", productId);
-
-      console.log("Supabase Ratings:", data);
 
       if (error) {
         console.error('Error fetching product ratings:', error.message);

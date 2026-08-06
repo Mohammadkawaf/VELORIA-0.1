@@ -4,6 +4,7 @@ import { Product, User } from '../types';
 import { Heart, MapPin } from 'lucide-react';
 
 interface CompactProductCardProps {
+  key?: string;
   product: Product;
   isFavorite: boolean;
   onToggleFavorite: (productId: string) => void;

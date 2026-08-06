@@ -151,16 +151,12 @@ export default function EditProductView({
           const markerIndex = urlToDelete.indexOf(bucketMarker);
           if (markerIndex !== -1) {
             const filePath = decodeURIComponent(urlToDelete.substring(markerIndex + bucketMarker.length));
-            console.log('Deleting image from storage in EditProductView:', filePath);
             const { error: storageError } = await supabase.storage
               .from('product-images')
               .remove([filePath]);
             
             if (storageError) {
               console.error('Error deleting image file from storage:', storageError);
-              alert('فشل حذف ملف الصورة من خادم التخزين: ' + storageError.message);
-            } else {
-              console.log('Successfully deleted file from storage:', filePath);
             }
           }
         }

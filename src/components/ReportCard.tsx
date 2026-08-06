@@ -23,11 +23,6 @@ export const ReportCard: React.FC<ReportCardProps> = ({
   onRejectReport,
   isModeratorView = false,
 }) => {
-  console.log("FULL REPORT OBJECT:", rep);
-  console.log("reason =", rep.reason);
-  console.log("details =", rep.details);
-  console.log("targetName =", rep.targetName);
-
   const rtlTextStyle: React.CSSProperties = {
     direction: 'rtl',
     textAlign: 'right',

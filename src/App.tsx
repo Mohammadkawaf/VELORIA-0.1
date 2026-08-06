@@ -574,15 +574,7 @@ export default function App() {
   useEffect(() => { localStorage.setItem('veloria-products', JSON.stringify(products)); }, [products]);
   useEffect(() => { localStorage.setItem('veloria-categories', JSON.stringify(categories)); }, [categories]);
 
-  useEffect(() => {
-    console.log("3- categories بعد انتهاء أول Render:", categories);
-    console.log("4- فحص هل يوجد أي useEffect أو دالة أخرى تستدعي setCategories مرة ثانية بعد تحميل dbCategories:");
-    console.log("   النتيجة: لا يوجد أي useEffect أو دالة أخرى تستدعي setCategories تلقائياً بعد تحميل dbCategories.");
-    console.log("5- قائمة بجميع أماكن استدعاء setCategories في مشروع Frontend:");
-    console.log("   - File: /src/App.tsx | Line: 625 (عند استلام dbCategories من Supabase عند التشغيل)");
-    console.log("   - File: /src/App.tsx | Line: 1794 (عند إضافة تصنيف جديد عبر handleAddCategory)");
-    console.log("   - File: /src/components/AdminPanel.tsx | Line: 1105 (عند حذف تصنيف عبر handleConfirmDeleteCategory)");
-  }, []);
+
   useEffect(() => {
     const sorted = [...orders].sort((a, b) => {
       const dateA = new Date(a.createdAt || a.created_at || 0).getTime();
@@ -708,10 +700,8 @@ export default function App() {
           // Fetch categories from Supabase
           try {
             const dbCategories = await supabaseService.getCategories();
-            console.log("1- قيمة dbCategories كاملة مباشرة بعد getCategories():", dbCategories);
             if (dbCategories) {
               setCategories(dbCategories);
-              console.log("2- categories مباشرة بعد تنفيذ setCategories(dbCategories):", dbCategories);
             }
           } catch (catErr) {
             console.warn('Could not sync categories from Supabase:', catErr);
@@ -778,7 +768,6 @@ export default function App() {
   useEffect(() => {
     const fetchFilteredAndSortedProducts = async () => {
       if (!isSupabaseConfigured) {
-        console.log("Market returned early because: isSupabaseConfigured is false");
         return;
       }
       
@@ -818,17 +807,9 @@ export default function App() {
           options.sortBy = activeMarketTab; // 'top-rated', 'most-viewed', 'newest'
         }
 
-        console.log(`Current Sort = ${sortBy}`);
-        console.log("Options object:", options);
-
         const dbProducts = await supabaseService.getProducts(options);
-        console.log("===== FETCH RESULT =====");
-        console.log("currentUser =", currentUser);
-        console.log("dbProducts.length =", dbProducts?.length);
-        console.log("dbProducts =", dbProducts);
         if (dbProducts) {
           setProducts(dbProducts);
-          console.log("products were sent to state");
 
           // Extract unique seller IDs from loaded products and fetch their profiles individually
           const sellerIds = Array.from(new Set(dbProducts.map(p => p.sellerId))).filter(Boolean);
@@ -923,9 +904,7 @@ export default function App() {
       const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(currentUser.id);
       if (isSupabaseConfigured && isUUID) {
         try {
-          console.log('[Follows] Loading followed sellers for currentUser:', currentUser.id);
           const dbFollowed = await supabaseService.getFollowedSellers(currentUser.id);
-          console.log('[Follows] Followed sellers loaded from DB:', dbFollowed);
           setFollowedSellers(dbFollowed);
           return;
         } catch (err) {
@@ -945,9 +924,7 @@ export default function App() {
     const syncFollowersCounts = async () => {
       if (!isSupabaseConfigured) return;
       try {
-        console.log('[Follows] Syncing all users followers count from DB...');
         const counts = await supabaseService.getAllFollowersCounts();
-        console.log('[Follows] DB Followers counts:', counts);
         setUsers((prevUsers) =>
           prevUsers.map((u) => ({
             ...u,
@@ -1076,8 +1053,6 @@ export default function App() {
     const isCurrentlyFollowing = followedSellers.includes(sellerId);
     const shouldFollow = !isCurrentlyFollowing;
 
-    console.log(`[Follows] handleToggleFollow triggered for sellerId: ${sellerId}. Currently following: ${isCurrentlyFollowing}. Action: ${shouldFollow ? 'FOLLOW (INSERT)' : 'UNFOLLOW (DELETE)'}`);
-
     // Optimistically update local followedSellers state
     setFollowedSellers((prev) =>
       isCurrentlyFollowing ? prev.filter((id) => id !== sellerId) : [...prev, sellerId]
@@ -1112,7 +1087,6 @@ export default function App() {
 
       // Re-fetch exact count from Supabase to ensure absolute accuracy
       const exactCount = await supabaseService.getFollowersCount(sellerId);
-      console.log(`[Follows] Exact follower count from DB for ${sellerId}: ${exactCount}`);
 
       setUsers((prevUsers) =>
         prevUsers.map((u) => (u.id === sellerId ? { ...u, followersCount: exactCount } : u))
@@ -1159,8 +1133,6 @@ export default function App() {
     if (isSupabaseConfigured && isUUID) {
       try {
         const product = { id: orderData.productId };
-        console.log(product.id)
-        console.log(typeof product.id)
 
         savedOrder = await supabaseService.createOrder({
           productId: orderData.productId,
@@ -1221,7 +1193,6 @@ export default function App() {
   };
 
   const handleSendReport = (reportData: Omit<Report, 'id' | 'createdAt' | 'reporterId' | 'reporterName' | 'status'>) => {
-    console.log("details received:", reportData.details);
     if (!currentUser) {
       return;
     }
@@ -1233,12 +1204,10 @@ export default function App() {
       createdAt: new Date().toISOString(),
       status: 'pending'
     };
-    console.log("payload:", newRep);
     setReports((prev) => [newRep, ...prev]);
   };
 
   const executeUpdateProductStatus = async (productId: string, status: 'active' | 'hidden' | 'sold' | 'expired', reason: string = '') => {
-    console.log("executeUpdateProductStatus started");
     const currentProd = products.find((p) => p.id === productId);
     if (!currentProd) return;
 
@@ -1255,13 +1224,10 @@ export default function App() {
     const isManagerAction = currentUser && (currentUser.role === 'admin' || currentUser.role === 'moderator') && (currentProd.sellerId !== currentUser.id);
 
     if (targetStatus === 'hidden') {
-      console.log('Hide button clicked');
       try {
-        console.log('Updating database...');
         if (isSupabaseConfigured && supabaseService) {
           await supabaseService.updateProductStatus(productId, 'hidden');
         }
-        console.log('Database updated successfully');
 
         // Send notifications on success
         if (isManagerAction) {
@@ -1280,7 +1246,6 @@ export default function App() {
           };
           setNotifications((prev) => [newNotif, ...prev]);
         }
-        console.log('Notification sent');
 
         setProducts((prev) =>
           prev.map((p) => {
@@ -1293,8 +1258,6 @@ export default function App() {
             return p;
           })
         );
-        console.log('Local state updated');
-        console.log('Hide العملية انتهت');
       } catch (err: any) {
         console.error('Failed to hide product:', err);
       }
@@ -1341,7 +1304,6 @@ export default function App() {
   };
 
   const handleUpdateProductStatus = async (productId: string, status: 'active' | 'hidden' | 'sold' | 'expired') => {
-    console.log("handleUpdateProductStatus started");
     const currentProd = products.find((p) => p.id === productId);
     if (!currentProd) return;
 
@@ -1457,9 +1419,6 @@ export default function App() {
     try {
       const { supabase, isSupabaseConfigured } = await import('./lib/supabase');
       if (isSupabaseConfigured && supabase) {
-        console.log("updatedProduct.categoryId:", updatedProduct.categoryId);
-        console.log("typeof updatedProduct.categoryId:", typeof updatedProduct.categoryId);
-
         const finalCategoryId =
           typeof updatedProduct.categoryId === 'string' &&
           updatedProduct.categoryId.startsWith('cat-')
@@ -1952,17 +1911,11 @@ export default function App() {
   };
 
   const handleAddCategory = async (categoryData: Omit<Category, 'id'>) => {
-    // 1- Before sending insert request to Supabase
-    console.log("1- قبل إرسال طلب insert إلى Supabase.");
-
     const dataToSend = {
       name: categoryData.name,
       icon: categoryData.icon,
       is_active: true
     };
-
-    // 2- Print the data that will be sent
-    console.log("2- البيانات التي سيتم إرسالها:", dataToSend);
 
     let savedId = `cat-${Date.now()}`;
 
@@ -1973,34 +1926,12 @@ export default function App() {
           .insert(dataToSend)
           .select();
 
-        // 3- Print the full Supabase response
-        console.log("3- نتيجة Supabase كاملة:", response);
-
-        // 4- Print status and statusText if they exist
-        console.log("4- status:", response.status, "| statusText:", response.statusText);
-
-        // 5- Print the number of affected rows
-        const affectedRows = response.data ? response.data.length : 0;
-        console.log("5- عدد الصفوف المتأثرة:", affectedRows);
-
-        // 6- If error exists, print error details
-        if (response.error) {
-          console.log("6- تفاصيل الخطأ (error):", {
-            code: response.error.code,
-            message: response.error.message,
-            details: response.error.details,
-            hint: response.error.hint
-          });
-        }
-
         if (response.data && response.data.length > 0) {
           savedId = String(response.data[0].id);
         }
       } catch (err: any) {
         console.error("Exception during categories insert:", err);
       }
-    } else {
-      console.log("Supabase is not configured, category added to local state only.");
     }
 
     const newCat: Category = {
@@ -2391,15 +2322,6 @@ export default function App() {
           <>
             {/* VIEW 1: Market (Home & Browse) */}
             {currentView === 'market' && (
-              (() => {
-                console.log("===== RENDER MARKET =====");
-                console.log("products state =", products.length);
-                console.log(products);
-                console.log("currentView =", currentView);
-                console.log("activeMarketTab =", activeMarketTab);
-                console.log("currentUser =", currentUser);
-                return null;
-              })() || (
           <div className="space-y-8">
             {/* Slogan Banner */}
             <div className="bg-slate-100 dark:bg-slate-900/40 p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-800/80 shadow-xs relative overflow-hidden flex flex-col md:flex-row items-center justify-between gap-6">
@@ -2878,7 +2800,7 @@ export default function App() {
               </div>
             )}
           </div>
-        ))}
+        )}
 
         {/* VIEW 2: Categories view listing */}
         {currentView === 'categories' && (

@@ -1087,7 +1087,6 @@ export default function AdminPanel({
 
   // Products Handlers
   const executeProductStatusToggle = async (productId: string, action: 'active' | 'hidden' | 'sold', reason: string = '') => {
-    console.log("executeProductStatusToggle started", productId);
     const targetProduct = productsToUse.find(p => p.id === productId);
     if (!targetProduct) {
       return;
@@ -1104,16 +1103,12 @@ export default function AdminPanel({
     }
 
     if (targetStatus === 'hidden') {
-      console.log('Hide button clicked');
-      console.log('calling handleUpdateProductStatus');
-
       const updates: any = {
         status: 'hidden',
         updated_at: new Date().toISOString()
       };
 
       try {
-        console.log('Updating database...');
         if (isSupabaseConfigured && supabase) {
           const { error } = await supabase
             .from('products')
@@ -1123,7 +1118,6 @@ export default function AdminPanel({
             throw error;
           }
         }
-        console.log('Database updated successfully');
 
         // Send notifications on success
         if (targetProduct.status !== 'hidden') {
@@ -1154,7 +1148,6 @@ export default function AdminPanel({
             }
           }
         }
-        console.log('Notification sent');
 
         // Update local state
         const updatedIsSold = targetProduct.isSold;
@@ -1163,8 +1156,6 @@ export default function AdminPanel({
         }
         
         setDbProductsForStats(prev => prev.map(p => p.id === productId ? { ...p, status: 'hidden', isSold: updatedIsSold } : p));
-        console.log('Local state updated');
-        console.log('Hide العملية انتهت');
 
         const statusAr = 'إخفاء ورقابة';
         const seller = users.find(u => u.id === targetProduct?.sellerId);
@@ -1181,7 +1172,6 @@ export default function AdminPanel({
         console.error('Failed to hide product:', err);
       }
     } else {
-      console.log("inside else (targetStatus is not hidden)");
       const updates: any = {
         status: targetStatus,
         updated_at: new Date().toISOString()
@@ -1259,7 +1249,6 @@ export default function AdminPanel({
   };
 
   const handleProductStatusToggle = async (productId: string, action: 'active' | 'hidden' | 'sold') => {
-    console.log("handleProductStatusToggle started", productId);
     const targetProduct = productsToUse.find(p => p.id === productId);
     if (!targetProduct) return;
 
@@ -1820,17 +1809,12 @@ export default function AdminPanel({
   };
 
   const handleDeleteCategory = async (catId: string) => {
-    console.log("Delete category clicked");
-
     if (currentUser.role !== 'admin') {
       try {
         alert('حذف الأقسام متاح للمدير فقط.');
       } catch (e) {}
-      console.log("Delete finished");
       return;
     }
-
-    console.log("Checking products count...");
 
     try {
       // Calculate local count of products under this category
@@ -1867,22 +1851,12 @@ export default function AdminPanel({
       }
 
       const productsCount = Math.max(localCount, dbCount);
-      console.log("Products count = " + productsCount);
 
       if (productsCount > 0) {
-        console.log("Category contains products");
         const errorMsg = 'لا يمكن حذف هذا التصنيف لأنه يحتوي على منتجات. قم بنقل المنتجات أو إخفاء التصنيف أولاً.';
         setCatMessage({ text: errorMsg, type: 'error' });
-        try {
-          alert(errorMsg);
-        } catch (e) {
-          console.warn('Alert blocked:', e);
-        }
-        console.log("Delete finished");
         return;
       }
-
-      console.log("Deleting category...");
 
       // Delete from Supabase if configured
       if (isSupabaseConfigured && supabase) {
@@ -1900,9 +1874,6 @@ export default function AdminPanel({
         }
       }
 
-      console.log("Category deleted successfully");
-      console.log("Updating local state");
-
       const cat = categories.find(c => c.id === catId);
       if (setCategories) {
         setCategories(prev => prev.filter(c => c.id !== catId));
@@ -1916,11 +1887,6 @@ export default function AdminPanel({
 
       const successMsg = 'تم حذف التصنيف بنجاح.';
       setCatMessage({ text: successMsg, type: 'success' });
-      try {
-        alert(successMsg);
-      } catch (e) {
-        console.warn('Alert blocked:', e);
-      }
 
       // Clear the feedback message after 4 seconds
       setTimeout(() => {
@@ -1929,8 +1895,6 @@ export default function AdminPanel({
 
     } catch (err) {
       console.error(err);
-    } finally {
-      console.log("Delete finished");
     }
   };
 
@@ -1983,47 +1947,18 @@ export default function AdminPanel({
     const currentStatus = Boolean(seller.is_featured || seller.isFeatured);
     const nextStatus = !currentStatus;
 
-    console.log("seller.id =", seller.id);
-
     if (isSupabaseConfigured && supabase) {
       try {
-        const row = await supabase
-          .from("profiles")
-          .select("id, username, full_name")
-          .eq("id", seller.id);
-        console.log(row);
-
-        const all = await supabase
-          .from("profiles")
-          .select("id, username, full_name");
-        console.log(all.data);
-
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from('profiles')
           .update({ is_featured: nextStatus })
-          .eq('id', seller.id)
-          .select();
-
-        console.log('[DIAGNOSTIC] UPDATE result:', { data, error });
+          .eq('id', seller.id);
 
         if (error) {
-          console.error('[DIAGNOSTIC] UPDATE failed with error:', error);
-        } else {
-          // Verification SELECT query directly after UPDATE
-          const { data: selectData, error: selectError } = await supabase
-            .from('profiles')
-            .select('id, is_featured')
-            .eq('id', seller.id)
-            .single();
-
-          console.log('[DIAGNOSTIC] Verification SELECT after UPDATE:', {
-            storeId: seller.id,
-            is_featured: selectData?.is_featured,
-            selectError
-          });
+          console.error('Failed updating is_featured in Supabase:', error);
         }
       } catch (err) {
-        console.error('[DIAGNOSTIC] Failed updating is_featured in Supabase:', err);
+        console.error('Failed updating is_featured in Supabase:', err);
       }
     }
 
@@ -2204,8 +2139,6 @@ export default function AdminPanel({
 
     const targetUsers = Array.from(targetMap.values());
 
-    console.log('عدد المستخدمين المستهدفين:', targetUsers.length);
-
     // Build payload array (one row per unique target user)
     const payloads = targetUsers.map(u => ({
       user_id: u.id,
@@ -2219,8 +2152,6 @@ export default function AdminPanel({
       created_at: new Date().toISOString()
     }));
 
-    console.log(`--- [Notification Broadcast] 1. INSERT Payloads (${payloads.length} records) ---`, payloads);
-
     try {
       if (!isSupabaseConfigured || !supabase) {
         throw new Error('Supabase Client is not configured or offline.');
@@ -2232,28 +2163,9 @@ export default function AdminPanel({
         .insert(payloads)
         .select();
 
-      const insertedRecordsCount = data ? data.length : 0;
-      console.log('عدد السجلات التي تم إدراجها فعلياً:', insertedRecordsCount);
-      console.log('--- [Notification Broadcast] 2. INSERT Result ---', { data, error });
-
       if (error) {
-        console.error('--- [Notification Broadcast] INSERT Failed ---', error);
         alert('فشلت عملية إرسال الإشعار إلى قاعدة البيانات: ' + (error.message || 'خطأ غير معروف'));
         return;
-      }
-
-      // 2. Immediate SELECT verification on the newly inserted record(s)
-      if (data && data.length > 0) {
-        const newRecordId = data[0].id;
-        console.log(`--- [Notification Broadcast] 3. Running SELECT for Record ID [${newRecordId}] ---`);
-        
-        const { data: selectData, error: selectError } = await supabase
-          .from('notifications')
-          .select('*')
-          .eq('id', newRecordId)
-          .single();
-
-        console.log('--- [Notification Broadcast] 4. Verification SELECT Result ---', { selectData, selectError });
       }
 
       const targetText = notifTarget === 'all' 
@@ -3207,10 +3119,7 @@ export default function AdminPanel({
 
                               {p.status !== 'hidden' ? (
                                 <button
-                                  onClick={() => {
-                                    console.log("Hide button clicked");
-                                    handleProductStatusToggle(p.id, 'hidden');
-                                  }}
+                                  onClick={() => handleProductStatusToggle(p.id, 'hidden')}
                                   className="p-1 text-amber-500 hover:text-rose-500 cursor-pointer"
                                   title="إخفاء المنتج من السوق للمخالفة"
                                 >

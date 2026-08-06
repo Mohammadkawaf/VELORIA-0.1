@@ -78,11 +78,9 @@ export default function ProfileView({
     let isMounted = true;
     const fetchRealFollowersCount = async () => {
       if (profileUser?.id) {
-        console.log(`[ProfileView] Executing getFollowersCount directly from Supabase followers table for storeId: ${profileUser.id}`);
         try {
           const count = await supabaseService.getFollowersCount(profileUser.id);
           if (isMounted) {
-            console.log(`[ProfileView] Received getFollowersCount result for store ${profileUser.id}: ${count}`);
             setRealFollowersCount(count);
           }
         } catch (err) {

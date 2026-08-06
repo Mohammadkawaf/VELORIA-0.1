@@ -229,11 +229,7 @@ export default function SellerDashboard({
                           تم البيع
                         </button>
                         <button
-                          onClick={() => {
-                            console.log("Hide button clicked");
-                            console.log("calling handleUpdateProductStatus");
-                            onUpdateProductStatus(p.id, 'hidden');
-                          }}
+                          onClick={() => onUpdateProductStatus(p.id, 'hidden')}
                           className={`px-2 py-0.5 rounded text-[9px] font-bold cursor-pointer ${
                             p.status === 'hidden'
                               ? 'bg-slate-500 text-white'

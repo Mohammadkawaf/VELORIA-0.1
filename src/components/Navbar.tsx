@@ -1,7 +1,6 @@
 import { Category, User, Order, AppSettings } from '../types';
-import { Search, Moon, Sun, MessageSquare, Bell, Store, Heart, Compass, Menu, Database, ArrowRight } from 'lucide-react';
+import { Search, Moon, Sun, MessageSquare, Bell, Store, Heart, Compass, Menu, ArrowRight } from 'lucide-react';
 import Icon from './Icons';
-import { isSupabaseConfigured } from '../lib/supabase';
 
 interface NavbarProps {
   currentUser: User | null;
@@ -89,16 +88,6 @@ export default function Navbar({
                   حيث يلتقي البائع بالمشتري
                 </span>
               </div>
-
-              {/* Database status pill */}
-              <span className={`inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                isSupabaseConfigured
-                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
-                  : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
-              }`} title={isSupabaseConfigured ? 'قاعدة البيانات السحابية Supabase نشطة وموصلة' : 'التطبيق يعمل بوضع التخزين المحلي Offline-First'}>
-                <Database className={`w-2.5 h-2.5 ${isSupabaseConfigured ? 'text-emerald-500 animate-pulse' : 'text-amber-500'}`} />
-                {isSupabaseConfigured ? 'سحابي' : 'قاعدة محلية'}
-              </span>
             </div>
           </div>
 

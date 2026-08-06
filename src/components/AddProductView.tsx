@@ -80,7 +80,6 @@ export default function AddProductView({
   currentUser,
   onAddProduct
 }: AddProductViewProps) {
-  console.log("categories prop =", categories);
   const [title, setTitle] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [description, setDescription] = useState('');
@@ -136,15 +135,11 @@ export default function AddProductView({
           const markerIndex = urlToDelete.indexOf(bucketMarker);
           if (markerIndex !== -1) {
             const filePath = decodeURIComponent(urlToDelete.substring(markerIndex + bucketMarker.length));
-            console.log('Deleting removed image from storage:', filePath);
             const { error } = await supabase.storage
               .from('product-images')
               .remove([filePath]);
             if (error) {
               console.error('Error deleting from storage:', error);
-              alert('فشل حذف الصورة من خادم التخزين: ' + error.message);
-            } else {
-              console.log('Successfully deleted from storage:', filePath);
             }
           }
         }
