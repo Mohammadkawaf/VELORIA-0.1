@@ -617,7 +617,10 @@ export default function ProfileView({
                   <span>التواصل عبر واتساب</span>
                 </button>
                 <button
-                  onClick={() => onFollow(profileUser.id)}
+                  onClick={() => {
+                    alert("FOLLOW BUTTON CLICKED");
+                    onFollow(profileUser.id);
+                  }}
                   className={`px-4 py-2 rounded-xl text-xs font-black cursor-pointer transition-all ${
                     isFollowing
                       ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 border border-rose-500/15'

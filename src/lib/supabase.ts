@@ -124,7 +124,7 @@ export const supabaseService = {
       const cleanWhatsapp = whatsappNumber.trim().replace(/[\s+]/g, '');
 
       // 1. Sign up user in Auth
-      const redirectUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+      const redirectUrl = typeof window !== 'undefined' ? window.location.origin : 'https://veloria-0-1.pages.dev';
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -232,7 +232,7 @@ export const supabaseService = {
       return { error: new Error('سيرفر Supabase غير متصل حالياً.') };
     }
     try {
-      const redirectUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+      const redirectUrl = typeof window !== 'undefined' ? window.location.origin : 'https://veloria-0-1.pages.dev';
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: redirectUrl
       });
