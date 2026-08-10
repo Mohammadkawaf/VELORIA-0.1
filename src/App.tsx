@@ -50,6 +50,40 @@ const GOVERNORATES_CITIES: Record<string, string[]> = {
   "الحسكة": ["الحسكة المدينة", "القامشلي", "رأس العين", "عامودا", "المالكية", "الدرباسية"]
 };
 
+interface HistoryState {
+  idx: number;
+  view: string;
+  storeId?: string | null;
+  productId?: string | null;
+}
+
+const buildUrl = (
+  view: string,
+  storeId?: string | null,
+  productId?: string | null
+): string => {
+  if (typeof window === 'undefined') return '/';
+  const url = new URL(window.location.href);
+  url.searchParams.delete('view');
+  url.searchParams.delete('v');
+  url.searchParams.delete('storeId');
+  url.searchParams.delete('s');
+  url.searchParams.delete('productId');
+  url.searchParams.delete('p');
+
+  if (productId) {
+    url.searchParams.set('view', 'product');
+    url.searchParams.set('productId', productId);
+  } else if (view === 'profile' && storeId) {
+    url.searchParams.set('view', 'profile');
+    url.searchParams.set('storeId', storeId);
+  } else if (view && view !== 'market') {
+    url.searchParams.set('view', view);
+  }
+
+  return url.pathname + url.search + url.hash;
+};
+
 export default function App() {
   // Theme state
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -484,31 +518,86 @@ export default function App() {
     } : rawSelectedProfileUser;
   }, [rawSelectedProfileUser, users]);
   const setSelectedProfileUser = setRawSelectedProfileUser;
-  const [viewHistory, setViewHistory] = useState<{ view: string; profileUser: User | null }[]>([]);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
-  const navigateTo = (view: string, profileUser: User | null = null) => {
-    setViewHistory((prev) => [...prev, { view: currentView, profileUser: selectedProfileUser }]);
-    setCurrentView(view);
-    setSelectedProfileUser(profileUser);
-  };
+  const historyIdxRef = useRef<number>(0);
+  const isPoppingStateRef = useRef<boolean>(false);
 
-  const navigateBack = () => {
-    if (viewHistory.length > 0) {
-      const prev = viewHistory[viewHistory.length - 1];
-      setViewHistory((prevHistory) => prevHistory.slice(0, -1));
-      setCurrentView(prev.view);
-      setSelectedProfileUser(prev.profileUser);
-    } else {
-      setCurrentView('market');
-      setSelectedProfileUser(null);
+  const navigateTo = useCallback((
+    targetView: string,
+    profileUser: User | null = null,
+    product: Product | null = null,
+    replace: boolean = false
+  ) => {
+    const currentHistoryState = typeof window !== 'undefined' ? (window.history.state as HistoryState | null) : null;
+    const currentIdx = currentHistoryState?.idx ?? historyIdxRef.current;
+    const nextIdx = replace ? currentIdx : currentIdx + 1;
+    historyIdxRef.current = nextIdx;
+
+    const storeId = profileUser ? profileUser.id : (targetView === 'profile' ? (profileUser?.id || selectedProfileUser?.id || null) : null);
+    const productId = product ? product.id : null;
+
+    const nextState: HistoryState = {
+      idx: nextIdx,
+      view: targetView,
+      storeId,
+      productId
+    };
+
+    const targetUrl = buildUrl(targetView, storeId, productId);
+
+    if (typeof window !== 'undefined' && !isPoppingStateRef.current) {
+      if (replace) {
+        window.history.replaceState(nextState, '', targetUrl);
+      } else {
+        window.history.pushState(nextState, '', targetUrl);
+      }
     }
-  };
+
+    setCurrentView(targetView);
+    setSelectedProfileUser(profileUser);
+    setSelectedProduct(product);
+  }, [selectedProfileUser]);
+
+  const handleCloseProductDetails = useCallback(() => {
+    const state = typeof window !== 'undefined' ? (window.history.state as HistoryState | null) : null;
+    if (state && state.productId) {
+      if (state.idx > 0) {
+        window.history.back();
+        return;
+      }
+    }
+    setSelectedProduct(null);
+    const nextView = currentView === 'market' || !currentView ? 'market' : currentView;
+    const storeId = nextView === 'profile' ? selectedProfileUser?.id || null : null;
+    const nextState: HistoryState = {
+      idx: historyIdxRef.current,
+      view: nextView,
+      storeId,
+      productId: null
+    };
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(nextState, '', buildUrl(nextView, storeId, null));
+    }
+  }, [currentView, selectedProfileUser]);
+
+  const navigateBack = useCallback(() => {
+    if (selectedProduct) {
+      handleCloseProductDetails();
+      return;
+    }
+    const currentState = typeof window !== 'undefined' ? (window.history.state as HistoryState | null) : null;
+    if (currentState && currentState.idx > 0) {
+      window.history.back();
+    } else {
+      navigateTo('market', null, null, true);
+    }
+  }, [selectedProduct, handleCloseProductDetails, navigateTo]);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [sortBy, setSortBy] = useState<string>('newest');
   const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(false);
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
 
   // Advanced Filtering States
@@ -612,24 +701,114 @@ export default function App() {
   useEffect(() => { localStorage.setItem('veloria-verification-requests', JSON.stringify(verificationRequests)); }, [verificationRequests]);
   useEffect(() => { localStorage.setItem('veloria-contact-messages', JSON.stringify(contactMessages)); }, [contactMessages]);
 
-  // Deep linking to shared items on mount
+  // Listen for browser back/forward buttons (popstate)
   useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      isPoppingStateRef.current = true;
+      const state = event.state as HistoryState | null;
+
+      if (state) {
+        historyIdxRef.current = state.idx ?? 0;
+        const targetView = state.view || 'market';
+        setCurrentView(targetView);
+
+        if (state.storeId) {
+          const foundUser = users.find(u => u.id === state.storeId || u.username === state.storeId);
+          setSelectedProfileUser(foundUser || null);
+        } else {
+          setSelectedProfileUser(null);
+        }
+
+        if (state.productId) {
+          const foundProd = products.find(p => p.id === state.productId);
+          setSelectedProduct(foundProd || null);
+        } else {
+          setSelectedProduct(null);
+        }
+      } else {
+        const params = new URLSearchParams(window.location.search);
+        const viewParam = params.get('view') || params.get('v') || 'market';
+        const storeIdParam = params.get('storeId') || params.get('s');
+        const productIdParam = params.get('productId') || params.get('p');
+
+        const resolvedView = viewParam === 'product' ? 'market' : viewParam;
+        setCurrentView(resolvedView);
+
+        if (storeIdParam) {
+          const foundUser = users.find(u => u.id === storeIdParam || u.username === storeIdParam);
+          setSelectedProfileUser(foundUser || null);
+        } else {
+          setSelectedProfileUser(null);
+        }
+
+        if (productIdParam) {
+          const foundProd = products.find(p => p.id === productIdParam);
+          setSelectedProduct(foundProd || null);
+        } else {
+          setSelectedProduct(null);
+        }
+      }
+
+      isPoppingStateRef.current = false;
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [users, products]);
+
+  // Initial history state setup on mount
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     const viewParam = params.get('view') || params.get('v');
     const storeIdParam = params.get('storeId') || params.get('s');
     const productIdParam = params.get('productId') || params.get('p');
 
-    if (viewParam === 'profile' && storeIdParam) {
+    let initialView = viewParam || 'market';
+    let initialProductId: string | null = null;
+
+    if (viewParam === 'product' && productIdParam) {
+      initialView = 'market';
+      initialProductId = productIdParam;
+    } else if (productIdParam) {
+      initialProductId = productIdParam;
+    }
+
+    const initialState: HistoryState = {
+      idx: 0,
+      view: initialView,
+      storeId: storeIdParam || null,
+      productId: initialProductId
+    };
+
+    historyIdxRef.current = 0;
+    window.history.replaceState(
+      initialState,
+      '',
+      buildUrl(initialView, storeIdParam || null, initialProductId)
+    );
+
+    setCurrentView(initialView);
+  }, []);
+
+  // Sync profile user / product when loaded asynchronously from DB
+  useEffect(() => {
+    const currentState = typeof window !== 'undefined' ? (window.history.state as HistoryState | null) : null;
+    const params = new URLSearchParams(window.location.search);
+    const storeIdParam = currentState?.storeId || params.get('storeId') || params.get('s');
+    const productIdParam = currentState?.productId || params.get('productId') || params.get('p');
+
+    if (storeIdParam && users.length > 0) {
       const matchedUser = users.find(u => u.id === storeIdParam || u.username === storeIdParam);
       if (matchedUser) {
-        setSelectedProfileUser(matchedUser);
-        setCurrentView('profile');
+        setSelectedProfileUser(prev => (!prev || prev.id !== matchedUser.id ? matchedUser : prev));
       }
-    } else if (viewParam === 'product' && productIdParam) {
+    }
+
+    if (productIdParam && products.length > 0) {
       const matchedProduct = products.find(p => p.id === productIdParam);
       if (matchedProduct) {
-        setSelectedProduct(matchedProduct);
-        setCurrentView('market');
+        setSelectedProduct(prev => (!prev || prev.id !== matchedProduct.id ? matchedProduct : prev));
       }
     }
   }, [users, products]);
@@ -663,7 +842,7 @@ export default function App() {
   useEffect(() => {
     const handleUrlCheck = () => {
       if (isPasswordRecovery()) {
-        setCurrentView('reset-password');
+        navigateTo('reset-password', null, null, true);
       }
     };
     handleUrlCheck();
@@ -677,7 +856,7 @@ export default function App() {
       if (isSupabaseConfigured) {
         try {
           if (isPasswordRecovery()) {
-            setCurrentView('reset-password');
+            navigateTo('reset-password', null, null, true);
             return; // Do NOT log them in as a normal user directly
           }
           
@@ -977,10 +1156,8 @@ export default function App() {
       }
     }
     setCurrentUser(null);
-    setCurrentView('market');
     setIsChatOpen(false);
-    setSelectedProduct(null);
-    setSelectedProfileUser(null);
+    navigateTo('market', null, null, true);
   };
 
   const handleSubmitContactMessage = async (msg: Omit<ContactMessage, 'id' | 'createdAt' | 'status'>) => {
@@ -1033,7 +1210,8 @@ export default function App() {
   const handleViewProduct = async (p: Product) => {
     // Increment views count locally for instant UI update
     setProducts(prev => prev.map(item => item.id === p.id ? { ...item, viewsCount: (item.viewsCount || 0) + 1 } : item));
-    setSelectedProduct({ ...p, viewsCount: (p.viewsCount || 0) + 1 });
+    const updatedProd = { ...p, viewsCount: (p.viewsCount || 0) + 1 };
+    navigateTo(currentView, selectedProfileUser, updatedProd);
 
     // Call Supabase RPC in the background to update the atomic counter
     const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p.id);
@@ -2023,7 +2201,7 @@ export default function App() {
         activeCategoryId={activeCategoryId}
         onSelectCategory={(id) => {
           setActiveCategoryId(id);
-          setCurrentView('market');
+          navigateTo('market');
         }}
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
@@ -2045,13 +2223,13 @@ export default function App() {
         favoritesCount={favorites.length}
         onShowFavoritesOnly={(show) => {
           setShowFavoritesOnly(show);
-          setCurrentView('market');
+          navigateTo('market');
         }}
         showFavoritesOnly={showFavoritesOnly}
         onOpenMenu={() => setIsMenuOpen(true)}
         settings={appSettings}
         showSearchAndCategories={currentView === 'market' && activeMarketTab === 'all'}
-        canGoBack={viewHistory.length > 0 || currentView !== 'market'}
+        canGoBack={(typeof window !== 'undefined' && window.history.state?.idx > 0) || currentView !== 'market' || selectedProduct !== null}
         onNavigateBack={navigateBack}
       />
 
@@ -2168,7 +2346,7 @@ export default function App() {
           <button
             onClick={() => {
               setActiveMarketTab('all');
-              setCurrentView('market');
+              navigateTo('market');
             }}
             className={`px-4 py-2 rounded-xl font-extrabold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
               currentView === 'market' && activeMarketTab === 'all'
@@ -2182,7 +2360,7 @@ export default function App() {
           <button
             onClick={() => {
               setActiveMarketTab('top-rated');
-              setCurrentView('market');
+              navigateTo('market');
             }}
             className={`px-4 py-2 rounded-xl font-extrabold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
               currentView === 'market' && activeMarketTab === 'top-rated'
@@ -2196,7 +2374,7 @@ export default function App() {
           <button
             onClick={() => {
               setActiveMarketTab('newest');
-              setCurrentView('market');
+              navigateTo('market');
             }}
             className={`px-4 py-2 rounded-xl font-extrabold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
               currentView === 'market' && activeMarketTab === 'newest'
@@ -2210,7 +2388,7 @@ export default function App() {
           <button
             onClick={() => {
               setActiveMarketTab('most-viewed');
-              setCurrentView('market');
+              navigateTo('market');
             }}
             className={`px-4 py-2 rounded-xl font-extrabold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
               currentView === 'market' && activeMarketTab === 'most-viewed'
@@ -2275,7 +2453,7 @@ export default function App() {
               <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex justify-center">
                 <button
                   type="button"
-                  onClick={() => setCurrentView('login')}
+                  onClick={() => navigateTo('login')}
                   className="text-xs font-bold text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300 hover:underline cursor-pointer"
                 >
                   تسجيل الدخول للمسؤولين والأعضاء
@@ -2574,7 +2752,7 @@ export default function App() {
                     <div className="space-y-3 pt-2">
                       <div className="flex items-center justify-between">
                         <button
-                          onClick={() => setCurrentView('shops')}
+                          onClick={() => navigateTo('shops')}
                           className="text-xs text-amber-600 dark:text-amber-400 hover:underline font-bold cursor-pointer"
                         >
                           تصفح دليل المتاجر كاملة ←
@@ -2622,10 +2800,7 @@ export default function App() {
                                     </div>
                                   </div>
                                   <button
-                                    onClick={() => {
-                                      setSelectedProfileUser(seller);
-                                      setCurrentView('profile');
-                                    }}
+                                    onClick={() => navigateTo('profile', seller)}
                                     className="text-[10px] font-black bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-xl cursor-pointer shrink-0 transition-colors"
                                   >
                                     زيارة المتجر
@@ -2808,7 +2983,7 @@ export default function App() {
             categories={activeCategories}
             onSelectCategory={(id) => {
               setActiveCategoryId(id);
-              setCurrentView('market');
+              navigateTo('market');
             }}
             productsCountByCategory={(catId) => visibleAllActiveProducts.filter((p) => String(p.categoryId) === String(catId) || p.categoryId === catId || (typeof p.categoryId === 'string' && p.categoryId.replace('cat-', '') === String(catId).replace('cat-', ''))).length}
           />
@@ -2822,10 +2997,7 @@ export default function App() {
             currentUser={currentUser}
             onFollow={handleToggleFollow}
             followedSellers={followedSellers}
-            onVisitShop={(seller) => {
-              setSelectedProfileUser(seller);
-              setCurrentView('profile');
-            }}
+            onVisitShop={(seller) => navigateTo('profile', seller)}
             onStartChat={(sellerId) => {
               setIsChatOpen(true);
             }}
@@ -2855,7 +3027,7 @@ export default function App() {
             currentUser={currentUser}
             onAddProduct={async (productData) => {
               await handleAddProduct(productData);
-              setCurrentView('market');
+              navigateTo('market', null, null, true);
             }}
           />
         )}
@@ -2876,7 +3048,7 @@ export default function App() {
               if (currentUser && currentUser.id === updatedUser.id) {
                 if (updatedUser.status === 'deactivated') {
                   setCurrentUser(null);
-                  setCurrentView('market');
+                  navigateTo('market', null, null, true);
                   setSelectedProfileUser(null);
                   return;
                 }
@@ -2963,10 +3135,7 @@ export default function App() {
                         </div>
                       </div>
                       <button
-                        onClick={() => {
-                          setSelectedProfileUser(seller);
-                          setCurrentView('profile');
-                        }}
+                        onClick={() => navigateTo('profile', seller)}
                         className="bg-amber-500 hover:bg-amber-650 text-slate-950 text-[10px] font-black px-3.5 py-2 rounded-xl cursor-pointer"
                       >
                         عرض المتجر الكامل
@@ -3022,15 +3191,15 @@ export default function App() {
             onLogin={(user) => {
               setCurrentUser(user);
               if (user.role === 'admin') {
-                setCurrentView('admin-panel');
+                navigateTo('admin-panel', null, null, true);
               } else if (user.role === 'moderator') {
-                setCurrentView('moderator-panel');
+                navigateTo('moderator-panel', null, null, true);
               } else {
-                setCurrentView('market');
+                navigateTo('market', null, null, true);
               }
             }}
             onNavigateToRegister={() => {
-              setCurrentView('register');
+              navigateTo('register');
             }}
           />
         )}
@@ -3043,20 +3212,14 @@ export default function App() {
                 await supabaseService.signOut();
               }
               setCurrentUser(null);
-              if (typeof window !== 'undefined') {
-                window.history.replaceState(null, '', window.location.origin + window.location.pathname);
-              }
-              setCurrentView('login');
+              navigateTo('login', null, null, true);
             }}
             onNavigateToLogin={async () => {
               if (isSupabaseConfigured) {
                 await supabaseService.signOut();
               }
               setCurrentUser(null);
-              if (typeof window !== 'undefined') {
-                window.history.replaceState(null, '', window.location.origin + window.location.pathname);
-              }
-              setCurrentView('login');
+              navigateTo('login', null, null, true);
             }}
           />
         )}
@@ -3067,13 +3230,13 @@ export default function App() {
             onRegister={(newUser) => {
               setUsers((prev) => [...prev, newUser]);
               setCurrentUser(newUser);
-              setCurrentView('market');
+              navigateTo('market', null, null, true);
             }}
             onNavigateToLogin={() => {
-              setCurrentView('login');
+              navigateTo('login');
             }}
             onViewLegal={() => {
-              setCurrentView('legal');
+              navigateTo('legal');
             }}
           />
         )}
@@ -3088,7 +3251,7 @@ export default function App() {
           <ContactView
             currentUser={currentUser}
             onSubmitMessage={handleSubmitContactMessage}
-            onNavigateToLegal={() => setCurrentView('legal')}
+            onNavigateToLegal={() => navigateTo('legal')}
             settings={appSettings}
           />
         )}
@@ -3204,7 +3367,7 @@ export default function App() {
             )}
             <div className="pt-2 flex justify-center">
               <button
-                onClick={() => setCurrentView('market')}
+                onClick={() => navigateTo('market')}
                 className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs cursor-pointer transition-colors"
               >
                 العودة للرئيسية
