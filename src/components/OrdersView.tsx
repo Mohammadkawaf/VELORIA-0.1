@@ -1,19 +1,19 @@
 import React, { useState } from 'react';
 import { Order, User } from '../types';
-import { ShoppingBag, ArrowUpRight, ArrowDownLeft, CheckCircle2, RefreshCw, Eye, MessageCircle, AlertCircle, Clock } from 'lucide-react';
+import { ShoppingBag, ArrowUpRight, ArrowDownLeft, AlertCircle, Store } from 'lucide-react';
 
 interface OrdersViewProps {
   orders: Order[];
   currentUser: User | null;
   onUpdateOrderStatus: (orderId: string, newStatus: Order['status']) => void;
-  onStartChat: (userId: string) => void;
+  onVisitStore: (storeId: string) => void;
 }
 
 export default function OrdersView({
   orders,
   currentUser,
   onUpdateOrderStatus,
-  onStartChat
+  onVisitStore
 }: OrdersViewProps) {
   const [activeTab, setActiveTab] = useState<'outgoing' | 'incoming'>('outgoing');
 
@@ -110,13 +110,13 @@ export default function OrdersView({
         {/* Action Actions Panel */}
         <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto shrink-0 border-t md:border-t-0 border-slate-100 dark:border-slate-850/60 pt-3 md:pt-0">
           
-          {/* Chat with buyer/seller */}
+          {/* Visit Store */}
           <button
-            onClick={() => onStartChat(orderPartnerId)}
-            className="flex-1 sm:flex-initial flex items-center justify-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-850 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-[10px] font-bold cursor-pointer"
+            onClick={() => onVisitStore(order.sellerId)}
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-850 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-[10px] font-bold cursor-pointer transition-colors"
           >
-            <MessageCircle className="w-3.5 h-3.5 text-slate-400" />
-            <span>مراسلة الطرف الآخر</span>
+            <Store className="w-3.5 h-3.5 text-amber-500" />
+            <span>زيارة المتجر</span>
           </button>
 
           {/* Action buttons based on lifecycle */}

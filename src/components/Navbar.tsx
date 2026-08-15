@@ -1,5 +1,5 @@
 import { Category, User, Order, AppSettings } from '../types';
-import { Search, Moon, Sun, MessageSquare, Bell, Store, Heart, Compass, Menu, ArrowRight } from 'lucide-react';
+import { Search, Moon, Sun, Bell, Store, Heart, Menu, ArrowRight, LogIn } from 'lucide-react';
 import Icon from './Icons';
 
 interface NavbarProps {
@@ -23,6 +23,7 @@ interface NavbarProps {
   showSearchAndCategories?: boolean;
   canGoBack?: boolean;
   onNavigateBack?: () => void;
+  onNavigateToLogin?: () => void;
 }
 
 export default function Navbar({
@@ -45,7 +46,8 @@ export default function Navbar({
   settings,
   showSearchAndCategories = true,
   canGoBack,
-  onNavigateBack
+  onNavigateBack,
+  onNavigateToLogin
 }: NavbarProps) {
   // Calculate pending/new orders for seller
   const sellerOrdersCount = currentUser
@@ -117,6 +119,18 @@ export default function Navbar({
             >
               {isDarkMode ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5 text-slate-700" />}
             </button>
+
+            {/* Login Button (Visible only when user is not logged in) */}
+            {!currentUser && onNavigateToLogin && (
+              <button
+                onClick={onNavigateToLogin}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-black bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 rounded-xl transition-all shadow-xs cursor-pointer shrink-0"
+                title="تسجيل الدخول"
+              >
+                <LogIn className="w-4 h-4" />
+                <span>تسجيل الدخول</span>
+              </button>
+            )}
 
             {currentUser && (
               <>

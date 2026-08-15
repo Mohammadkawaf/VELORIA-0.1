@@ -2231,6 +2231,7 @@ export default function App() {
         showSearchAndCategories={currentView === 'market' && activeMarketTab === 'all'}
         canGoBack={(typeof window !== 'undefined' && window.history.state?.idx > 0) || currentView !== 'market' || selectedProduct !== null}
         onNavigateBack={navigateBack}
+        onNavigateToLogin={() => navigateTo('login')}
       />
 
       {/* Announcement Banner Bar (directly below Navbar) */}
@@ -3072,8 +3073,19 @@ export default function App() {
             orders={orders}
             currentUser={currentUser}
             onUpdateOrderStatus={handleUpdateOrderStatus}
-            onStartChat={(userId) => {
-              setIsChatOpen(true);
+            onVisitStore={(storeId) => {
+              const seller = users.find((u) => u.id === storeId || u.username === storeId);
+              if (seller) {
+                navigateTo('profile', seller);
+              } else {
+                navigateTo('profile', {
+                  id: storeId,
+                  name: 'المتجر',
+                  username: storeId,
+                  role: 'seller',
+                  createdAt: new Date().toISOString()
+                });
+              }
             }}
           />
         )}
