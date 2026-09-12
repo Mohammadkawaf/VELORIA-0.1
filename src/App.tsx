@@ -2671,7 +2671,7 @@ export default function App() {
             {activeMarketTab === 'all' && (activeCategoryId || searchTerm.trim() !== '' || showFavoritesOnly || isAdvancedFilteringActive) ? (
               // Search / Categorized product list
               isLoadingProducts ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 md:gap-5 lg:gap-6">
                   {Array.from({ length: 8 }).map((_, idx) => (
                     <ProductCardSkeleton key={`skeleton-grid-${idx}`} />
                   ))}
@@ -2695,7 +2695,7 @@ export default function App() {
                   </button>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 md:gap-5 lg:gap-6">
                   {filteredProducts.map((prod) => (
                     <ProductCard
                       key={prod.id}
@@ -2887,7 +2887,7 @@ export default function App() {
                         لا توجد منتجات نشطة حالياً.
                       </div>
                     ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 md:gap-5 lg:gap-6">
                         {visibleProducts.map((prod) => (
                           <ProductCard
                             key={`tab-rated-${prod.id}`}
@@ -2921,7 +2921,7 @@ export default function App() {
                         لا توجد منتجات نشطة حالياً.
                       </div>
                     ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 md:gap-5 lg:gap-6">
                         {visibleProducts.map((prod) => (
                           <ProductCard
                             key={`tab-newest-${prod.id}`}
@@ -2955,7 +2955,7 @@ export default function App() {
                         لا توجد منتجات نشطة حالياً.
                       </div>
                     ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 md:gap-5 lg:gap-6">
                         {visibleProducts.map((prod) => (
                           <ProductCard
                             key={`tab-most-viewed-${prod.id}`}
@@ -3101,7 +3101,7 @@ export default function App() {
                 قائمتك المفضلة فارغة حالياً. اضغط على أيقونة القلب على المنتجات لإضافتها هنا.
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+              <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 md:gap-5 lg:gap-6">
                 {visibleProducts.filter(p => favorites.includes(p.id)).map(prod => (
                   <ProductCard
                     key={prod.id}

@@ -121,12 +121,12 @@ export default function ProductCard({
       </div>
 
       {/* Card Content */}
-      <div className="p-4 flex-1 flex flex-col justify-between font-sans">
+      <div className="p-3 sm:p-4 flex-1 flex flex-col justify-between font-sans">
         <div>
           {/* Badges container */}
           {seller && seller.badges.length > 0 && (
-            <div className="flex flex-wrap gap-1 mb-2">
-              {seller.badges.map((b) => (
+            <div className="flex flex-wrap gap-1 mb-1.5 sm:mb-2">
+              {seller.badges.slice(0, 2).map((b) => (
                 <div key={b}>{renderBadge(b)}</div>
               ))}
             </div>
@@ -135,47 +135,47 @@ export default function ProductCard({
           {/* Title */}
           <h3
             onClick={() => onViewDetails(product)}
-            className="font-bold text-slate-800 dark:text-slate-100 text-sm line-clamp-2 mb-2 hover:text-amber-600 dark:hover:text-amber-400 transition-colors cursor-pointer"
+            className="font-bold text-slate-800 dark:text-slate-100 text-xs sm:text-sm line-clamp-2 mb-1.5 sm:mb-2 hover:text-amber-600 dark:hover:text-amber-400 transition-colors cursor-pointer leading-snug"
           >
             {product.title}
           </h3>
         </div>
 
         {/* Price, rating, and location */}
-        <div className="mt-4 pt-3 border-t border-slate-50 dark:border-slate-800/50">
-          <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="mt-2 sm:mt-4 pt-2 sm:pt-3 border-t border-slate-50 dark:border-slate-800/50">
+          <div className="flex items-center justify-between gap-1 mb-1.5 sm:mb-2">
             {/* Price */}
-            <div className="text-amber-600 dark:text-amber-400 font-extrabold text-base flex items-baseline gap-1">
+            <div className="text-amber-600 dark:text-amber-400 font-extrabold text-sm sm:text-base flex items-baseline gap-1">
               <span>{product.price}</span>
-              <span className="text-xs font-normal text-slate-500 dark:text-slate-400">
+              <span className="text-[10px] sm:text-xs font-normal text-slate-500 dark:text-slate-400">
                 {product.currency || 'ل.س'}
               </span>
             </div>
 
             {/* Rating */}
             {product.reviewsCount > 0 ? (
-              <div className="flex items-center gap-0.5 text-xs text-amber-500 bg-amber-50 dark:bg-amber-950/20 px-1.5 py-0.5 rounded">
-                <Star className="w-3 h-3 fill-amber-500" />
+              <div className="flex items-center gap-0.5 text-[10px] sm:text-xs text-amber-500 bg-amber-50 dark:bg-amber-950/20 px-1.5 py-0.5 rounded">
+                <Star className="w-2.5 h-2.5 sm:w-3 sm:h-3 fill-amber-500 shrink-0" />
                 <span className="font-bold">{product.rating}</span>
-                <span className="text-[10px] text-slate-400">({product.reviewsCount})</span>
+                <span className="text-[9px] sm:text-[10px] text-slate-400 hidden xs:inline">({product.reviewsCount})</span>
               </div>
             ) : (
-              <div className="text-[10px] text-slate-400">لا تقييمات</div>
+              <div className="text-[9px] sm:text-[10px] text-slate-400">لا تقييمات</div>
             )}
           </div>
 
           {/* Location and Date */}
-          <div className="flex items-center justify-between text-[11px] text-slate-400 dark:text-slate-500">
-            <span className="flex items-center gap-0.5 truncate max-w-[100px]">
-              <MapPin className="w-3 h-3 shrink-0" />
+          <div className="flex items-center justify-between text-[10px] sm:text-[11px] text-slate-400 dark:text-slate-500">
+            <span className="flex items-center gap-0.5 truncate max-w-[65px] sm:max-w-[100px]">
+              <MapPin className="w-2.5 h-2.5 sm:w-3 sm:h-3 shrink-0" />
               {product.city || 'دمشق'}
             </span>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               <span className="flex items-center gap-0.5 text-slate-400 dark:text-slate-500">
-                <Eye className="w-3 h-3" />
+                <Eye className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                 <span>{product.viewsCount ?? 0}</span>
               </span>
-              <span>
+              <span className="hidden xs:inline">
                 {new Date(product.createdAt).toLocaleDateString('ar-SA', {
                   month: 'short',
                   day: 'numeric'
