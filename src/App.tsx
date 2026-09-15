@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Product, User, Category, Review, Order, Message, Report, UserBadge, Notification, Contribution, VerificationRequest, AppSettings, ProductFilterOptions } from './types';
 import Navbar from './components/Navbar';
+import AndroidAppBanner from './components/AndroidAppBanner';
 import HideProductModal from './components/HideProductModal';
 import AdminPromptModal from './components/AdminPromptModal';
 import ProductCard from './components/ProductCard';
@@ -2193,6 +2194,9 @@ export default function App() {
         }}
         settings={appSettings}
       />
+
+      {/* Android App Download Banner */}
+      <AndroidAppBanner />
 
       {/* Primary Navigation Header */}
       <Navbar
